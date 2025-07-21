@@ -35,10 +35,10 @@ Individual scripts in `/archive/legacy-scripts/` have been superseded by the mas
 ```
 /scripts/           # Production-ready scripts
   virtualizor-server-setup.sh    # MASTER: Complete server provisioning pipeline
-  configure-zabbix.sh             # SSH tunnel configuration with user management
 /docs/              # User documentation (installation, usage guides)
 /archive/           # Legacy scripts and deprecated files
   /legacy-scripts/  # Individual scripts superseded by master script
+    configure-zabbix.sh           # SSH tunnel configuration (archived)
   /tests/          # Development test scripts (Windows incompatible)
 /logs/              # All script logs go here (auto-created)
 ```
@@ -165,6 +165,6 @@ Keep documentation minimal but comprehensive for Virtualizor environments:
 - `README.md` - Quick start and Virtualizor integration guide
 - `/docs/installation.md` - Recipe integration and automated deployment setup
 - `/docs/usage.md` - Configuration and customization for different provisioning scenarios
-- `/docs/troubleshooting.md` - Provisioning issues, log analysis, and debugging during server creation
+- `/docs/troubleshooting-guide.md` - Provisioning issues, log analysis, and debugging during server creation
 
 Remember: Each script is a complete, standalone solution. No dependencies, no shared state, no inter-script communication. Design for reliability in unattended, automated provisioning environments.

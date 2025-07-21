@@ -46,7 +46,7 @@ zabbix-monitor/
 │   ├── README.md              # This file - complete overview
 │   ├── development.md         # Developer guide and patterns
 │   ├── deployment.md          # Boot integration and systemd
-│   └── troubleshooting.md     # Common issues and solutions
+│   └── troubleshooting-guide.md  # Common issues and solutions
 ├── config/                    # Configuration templates
 │   ├── zabbix-install.service # Systemd service template
 │   └── examples/              # Configuration examples
@@ -309,7 +309,7 @@ sudo journalctl -u zabbix-install.service --since "1 hour ago"
 ### Getting Help
 1. **Check Logs**: Always start with `/var/log/zabbix-scripts/`
 2. **Test Mode**: Use `--test` flag to validate configuration
-3. **Documentation**: Review `/docs/troubleshooting.md` for common issues
+3. **Documentation**: Review `/docs/troubleshooting-guide.md` for common issues
 4. **Service Status**: Check systemd service status and logs
 
 ### Reporting Issues

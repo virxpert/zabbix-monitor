@@ -7,6 +7,7 @@ This directory contains legacy scripts and files that have been superseded by th
 These individual scripts are **legacy** and have been replaced by the master script `virtualizor-server-setup.sh`. They are kept for reference purposes only.
 
 ### Archived Files:
+- `configure-zabbix.sh` - Standalone Zabbix configuration with SSH tunnel (superseded by master script)
 - `create-secure-tunnel.sh` - SSH tunnel creation (superseded by master script)
 - `install-zabbix-agent.sh` - Standalone Zabbix installation (superseded by master script) 
 - `install_zabbix_agent_virtualizor.sh` - Virtualizor-specific installation (superseded by master script)
