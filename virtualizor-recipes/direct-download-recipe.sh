@@ -1,12 +1,33 @@
 #!/bin/bash
 #
-# Virtualizor Recipe: Direct Download and Execute
-# This recipe downloads the latest script from GitHub and executes it
+# Virtualizor Recipe: Direct Download with Dynamic Configuration
+# This recipe downloads the latest script and executes with custom configuration
 # Supports all major Linux distributions with automatic OS detection
-# Place this content in your Virtualizor recipe configuration
+# IMPORTANT: Customize the configuration section below for your infrastructure
 #
 
 set -euo pipefail
+
+# ====================================================================
+# CONFIGURATION SECTION - CUSTOMIZE FOR YOUR INFRASTRUCTURE
+# ====================================================================
+
+# CRITICAL: Replace these default values with YOUR infrastructure details
+# Method 1: Environment Variables (recommended for Virtualizor)
+export ZABBIX_SERVER_DOMAIN="your-monitor-server.example.com"  # YOUR server domain/IP
+export SSH_TUNNEL_PORT="2022"                                  # YOUR unique SSH port
+export SSH_TUNNEL_USER="zabbix-user"                          # YOUR unique SSH username
+export ZABBIX_SERVER_PORT="10051"                             # Usually 10051
+export ZABBIX_VERSION="6.4"                                   # Zabbix version
+
+# SECURITY: Ensure these values are unique and not predictable
+# - Use YOUR domain/IP instead of examples
+# - Use non-standard SSH ports (avoid 22, 2222, 20202)  
+# - Use unique usernames (avoid 'zabbix', 'zabbixssh', 'monitoring')
+
+# ====================================================================
+# RECIPE EXECUTION LOGIC (DO NOT MODIFY BELOW THIS LINE)
+# ====================================================================
 
 # Virtualizor Recipe Configuration
 SCRIPT_URL="https://raw.githubusercontent.com/virxpert/zabbix-monitor/main/scripts/virtualizor-server-setup.sh"
@@ -166,13 +187,51 @@ if ! bash -n "$SCRIPT_PATH" 2>/dev/null; then
 fi
 log_message "Script syntax validation passed"
 
-# Execute the script with default settings for multi-OS compatibility
-log_message "Starting server setup with OS auto-detection..."
-if "$SCRIPT_PATH" --banner-text "Virtualizor Managed Server - READY"; then
+# Configuration validation for security
+validate_configuration() {
+    local warnings=0
+    
+    if [[ "$ZABBIX_SERVER_DOMAIN" == *"example.com"* ]] || [[ "$ZABBIX_SERVER_DOMAIN" == "your-monitor-server"* ]]; then
+        log_message "WARNING: Using example domain - Update ZABBIX_SERVER_DOMAIN with your real server"
+        warnings=$((warnings + 1))
+    fi
+    
+    if [ "$SSH_TUNNEL_PORT" = "22" ] || [ "$SSH_TUNNEL_PORT" = "2222" ] || [ "$SSH_TUNNEL_PORT" = "20202" ]; then
+        log_message "WARNING: Using common SSH port ($SSH_TUNNEL_PORT) - Consider using unique port for security"
+        warnings=$((warnings + 1))
+    fi
+    
+    if [[ "$SSH_TUNNEL_USER" == *"zabbix"* ]] || [ "$SSH_TUNNEL_USER" = "monitoring" ]; then
+        log_message "WARNING: Using predictable username ($SSH_TUNNEL_USER) - Consider using unique username"
+        warnings=$((warnings + 1))
+    fi
+    
+    if [ $warnings -gt 0 ]; then
+        log_message "SECURITY NOTICE: $warnings configuration warnings found"
+        log_message "For production use, customize configuration values in recipe file"
+    fi
+}
+
+# Validate configuration
+validate_configuration
+
+# Execute the script with runtime configuration
+log_message "Starting server setup with configuration:"
+log_message "  Server: $ZABBIX_SERVER_DOMAIN"
+log_message "  SSH Port: $SSH_TUNNEL_PORT" 
+log_message "  SSH User: $SSH_TUNNEL_USER"
+log_message "  Zabbix Version: $ZABBIX_VERSION"
+
+if "$SCRIPT_PATH" --ssh-host "$ZABBIX_SERVER_DOMAIN" \
+                  --ssh-port "$SSH_TUNNEL_PORT" \
+                  --ssh-user "$SSH_TUNNEL_USER" \
+                  --zabbix-version "$ZABBIX_VERSION" \
+                  --zabbix-server-port "$ZABBIX_SERVER_PORT"; then
     log_message "=== Server setup completed successfully ==="
     log_message "OS: $(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2 2>/dev/null || echo 'Unknown')"
-    log_message "Zabbix monitoring configured and ready"
-    log_message "SSH tunnel service configured (requires key setup)"
+    log_message "Zabbix monitoring configured for: $ZABBIX_SERVER_DOMAIN:$ZABBIX_SERVER_PORT"
+    log_message "SSH tunnel configured for: $SSH_TUNNEL_USER@$ZABBIX_SERVER_DOMAIN:$SSH_TUNNEL_PORT"
+    log_message "SSH public key available in: /root/zabbix_tunnel_public_key.txt"
 else
     exit_code=$?
     log_message "ERROR: Server setup failed with exit code $exit_code"

@@ -44,13 +44,29 @@ readonly DEFAULT_MOTD_MESSAGE="WARNING: Authorized Access Only
 *   Unauthorized use is strictly prohibited and monitored. *
 *   For any issue, report it to support@everythingcloud.ca *"
 
-# Zabbix configuration
+# Dynamic Configuration System for Virtualizor Provisioning
+# Supports: Environment Variables, Command-line Parameters, and Runtime Prompts
+
+# Method 1: Environment Variables (if set)
+# Method 2: Command-line Parameters (see usage function)  
+# Method 3: Secure defaults with runtime validation
+
+# Default configuration (fallback values - update these for your infrastructure)
 readonly DEFAULT_ZABBIX_VERSION="6.4"
 readonly DEFAULT_ZABBIX_SERVER="127.0.0.1"
-readonly DEFAULT_HOME_SERVER_IP="monitor.cloudgeeks.in"
-readonly DEFAULT_HOME_SERVER_SSH_PORT=20202
+
+# CRITICAL: Update these default values for your infrastructure before deployment
+# These are used when no environment variables or parameters are provided
+readonly FALLBACK_HOME_SERVER_IP="your-monitor-server.example.com"
+readonly FALLBACK_HOME_SERVER_SSH_PORT="2022"
+readonly FALLBACK_SSH_USER="zabbix-user"
+
+# Runtime configuration (populated from env vars, parameters, or defaults)
+DEFAULT_HOME_SERVER_IP="${ZABBIX_SERVER_DOMAIN:-$FALLBACK_HOME_SERVER_IP}"
+DEFAULT_HOME_SERVER_SSH_PORT="${SSH_TUNNEL_PORT:-$FALLBACK_HOME_SERVER_SSH_PORT}"
+DEFAULT_SSH_USER="${SSH_TUNNEL_USER:-$FALLBACK_SSH_USER}"
+
 readonly DEFAULT_ZABBIX_SERVER_PORT=10051
-readonly DEFAULT_SSH_USER="zabbixssh"
 readonly DEFAULT_SSH_KEY="/root/.ssh/zabbix_tunnel_key"
 readonly DEFAULT_ADMIN_USER="root"
 readonly DEFAULT_ADMIN_KEY="/root/.ssh/id_rsa"
@@ -1679,6 +1695,9 @@ OPTIONS:
     --banner-text TEXT         Custom banner text
     --zabbix-version VERSION   Zabbix version to install (default: $DEFAULT_ZABBIX_VERSION)
     --ssh-host HOST           SSH tunnel host (default: $DEFAULT_HOME_SERVER_IP)
+    --ssh-port PORT           SSH tunnel port (default: $DEFAULT_HOME_SERVER_SSH_PORT)
+    --ssh-user USER           SSH tunnel user (default: $DEFAULT_SSH_USER)
+    --zabbix-server-port PORT Zabbix server port (default: $DEFAULT_ZABBIX_SERVER_PORT)
     --test                    Test mode - validate without changes
     --status                  Show current setup status
     --validate                Comprehensive system validation
@@ -1687,6 +1706,17 @@ OPTIONS:
     --quick-status            Quick status overview
     --cleanup                 Clean up state files and services
     --help                    Show this help message
+
+DYNAMIC PROVISIONING EXAMPLES:
+    # Virtualizor Recipe with environment variables
+    ZABBIX_SERVER_DOMAIN="monitor.acme.com" SSH_TUNNEL_PORT="7832" \\
+    SSH_TUNNEL_USER="mon-agent" curl -fsSL \\
+    https://raw.githubusercontent.com/virxpert/zabbix-monitor/main/scripts/virtualizor-server-setup.sh | bash
+
+    # Direct execution with parameters
+    ./virtualizor-server-setup.sh --ssh-host "monitor.acme.com" \\
+                                  --ssh-port "7832" \\
+                                  --ssh-user "mon-agent"
 
 STAGES:
     $STAGE_INIT               Initial setup and validation
@@ -1744,6 +1774,9 @@ main() {
     local banner_text="$DEFAULT_BANNER_TEXT"
     local zabbix_version="$DEFAULT_ZABBIX_VERSION"
     local ssh_host="$DEFAULT_HOME_SERVER_IP"
+    local ssh_port="$DEFAULT_HOME_SERVER_SSH_PORT"
+    local ssh_user="$DEFAULT_SSH_USER"
+    local zabbix_server_port="$DEFAULT_ZABBIX_SERVER_PORT"
     local resume_after_reboot=false
     local test_mode=false
     local show_status=false
@@ -1798,6 +1831,30 @@ main() {
                     exit 2
                 fi
                 ssh_host="$2"
+                shift 2
+                ;;
+            --ssh-port)
+                if [ -z "${2:-}" ]; then
+                    log_error "ERROR: --ssh-port requires a value"
+                    exit 2
+                fi
+                ssh_port="$2"
+                shift 2
+                ;;
+            --ssh-user)
+                if [ -z "${2:-}" ]; then
+                    log_error "ERROR: --ssh-user requires a value"
+                    exit 2
+                fi
+                ssh_user="$2"
+                shift 2
+                ;;
+            --zabbix-server-port)
+                if [ -z "${2:-}" ]; then
+                    log_error "ERROR: --zabbix-server-port requires a value"
+                    exit 2
+                fi
+                zabbix_server_port="$2"
                 shift 2
                 ;;
             --test)

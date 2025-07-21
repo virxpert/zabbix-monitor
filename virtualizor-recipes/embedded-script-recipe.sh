@@ -3,9 +3,37 @@
 # Virtualizor Recipe: Embedded Script (Multi-OS Support)
 # This recipe contains the complete setup script embedded within it
 # Compatible with: Ubuntu 18.04-24.04, Debian 10-12, RHEL/CentOS 7-9, AlmaLinux/Rocky 8-9
-# Copy the entire virtualizor-server-setup.sh content after this header
-# Author: Generated for public repository deployment
-#
+# Author: Zabbix Monitor Project
+
+# =============================================================================
+# CONFIGURATION SECTION - CUSTOMIZE FOR YOUR ENVIRONMENT
+# =============================================================================
+
+# ⚠️ SECURITY WARNING: Replace ALL example values with YOUR actual configuration
+export ZABBIX_SERVER_DOMAIN="your-monitor-server.example.com"  # ⚠️ CHANGE THIS!
+export SSH_TUNNEL_PORT="2022"        # ⚠️ Use non-default port for security
+export SSH_TUNNEL_USER="zabbix-user" # ⚠️ Use unique username
+export ZABBIX_VERSION="6.4"
+export ZABBIX_SERVER_PORT="10051"
+
+# Validation function
+validate_configuration() {
+    if [[ "$ZABBIX_SERVER_DOMAIN" == "your-monitor-server.example.com" ]] || 
+       [[ "$ZABBIX_SERVER_DOMAIN" == "monitor.cloudgeeks.in" ]]; then
+        echo "❌ ERROR: Using example domain. Update CONFIGURATION SECTION with your actual server details."
+        return 1
+    fi
+    return 0
+}
+
+# Validate before proceeding
+if ! validate_configuration; then
+    exit 1
+fi
+
+# =============================================================================
+# EMBEDDED RECIPE LOGIC
+# =============================================================================
 
 # Recipe Header with enhanced OS detection
 RECIPE_LOG="/var/log/virtualizor-recipe.log"
@@ -121,10 +149,10 @@ readonly DEFAULT_MOTD_MESSAGE="WARNING: Authorized Access Only
 # Zabbix configuration
 readonly DEFAULT_ZABBIX_VERSION="6.4"
 readonly DEFAULT_ZABBIX_SERVER="127.0.0.1"
-readonly DEFAULT_HOME_SERVER_IP="monitor.cloudgeeks.in"
-readonly DEFAULT_HOME_SERVER_SSH_PORT=20202
+readonly DEFAULT_HOME_SERVER_IP="${ZABBIX_SERVER_DOMAIN:-"your-monitor-server.example.com"}"
+readonly DEFAULT_HOME_SERVER_SSH_PORT="${SSH_TUNNEL_PORT:-2022}"
 readonly DEFAULT_ZABBIX_SERVER_PORT=10051
-readonly DEFAULT_SSH_USER="zabbixssh"
+readonly DEFAULT_SSH_USER="${SSH_TUNNEL_USER:-"zabbix-user"}"
 readonly DEFAULT_SSH_KEY="/root/.ssh/zabbix_tunnel_key"
 readonly DEFAULT_ADMIN_USER="root"
 readonly DEFAULT_ADMIN_KEY="/root/.ssh/id_rsa"

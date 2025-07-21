@@ -17,7 +17,7 @@ readonly LOG_FILE="${LOG_DIR}/${SCRIPT_NAME}-$(date +%Y%m%d).log"
 readonly LOCK_FILE="/var/run/${SCRIPT_NAME}.pid"
 
 # Default configuration - modify these values as needed
-readonly DEFAULT_HOME_SERVER_IP="monitor.cloudgeeks.in"
+readonly DEFAULT_HOME_SERVER_IP="${ZABBIX_SERVER_DOMAIN:-"your-monitor-server.example.com"}"
 readonly DEFAULT_HOME_SERVER_SSH_PORT=20202
 readonly DEFAULT_ZABBIX_SERVER_PORT=10051
 readonly DEFAULT_SSH_USER="zabbixssh"

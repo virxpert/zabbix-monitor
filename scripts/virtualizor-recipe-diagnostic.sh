@@ -128,31 +128,86 @@ detect_package_manager() {
     fi
 }
 
-# Enhanced network tools check
-check_network_tools() {
-    log_message "INFO" "=== Network Tools Check ==="
+# Enhanced network connectivity check with multiple methods
+check_network() {
+    log_message "INFO" "Testing network connectivity..."
     
-    # Check wget
-    if command -v wget >/dev/null 2>&1; then
-        check_passed "wget is available"
-        log_message "INFO" "wget version: $(wget --version 2>/dev/null | head -1 || echo 'Version unavailable')"
-    else
-        check_warning "wget not found - may need installation"
+    # Method 1: Ping Google DNS
+    if ping -c 1 -W 5 8.8.8.8 >/dev/null 2>&1; then
+        log_message "SUCCESS" "Network connectivity confirmed (Google DNS)"
+        return 0
     fi
     
-    # Check curl
+    # Method 2: Ping Cloudflare DNS
+    if ping -c 1 -W 5 1.1.1.1 >/dev/null 2>&1; then
+        log_message "SUCCESS" "Network connectivity confirmed (Cloudflare DNS)"
+        return 0
+    fi
+    
+    # Method 3: Test GitHub connectivity
     if command -v curl >/dev/null 2>&1; then
-        check_passed "curl is available"
-        log_message "INFO" "curl version: $(curl --version 2>/dev/null | head -1 || echo 'Version unavailable')"
-    else
-        check_warning "curl not found"
+        if curl -s --connect-timeout 10 https://github.com >/dev/null; then
+            log_message "SUCCESS" "Network connectivity confirmed (GitHub via curl)"
+            return 0
+        fi
     fi
     
-    # Check ping
-    if command -v ping >/dev/null 2>&1; then
-        check_passed "ping is available"
+    return 1
+}
+
+# Security configuration check
+check_security_config() {
+    log_message "INFO" "=== Security Configuration Check ==="
+    
+    # Check for hardcoded values in config
+    if [ -f "/root/virtualizor-server-setup.sh" ]; then
+        # Check for example domain usage
+        if grep -q "example\.com" /root/virtualizor-server-setup.sh 2>/dev/null; then
+            check_passed "Using secure example domain (good)"
+        elif grep -q "monitor\.cloudgeeks\.in\|cloudgeeks\.in" /root/virtualizor-server-setup.sh 2>/dev/null; then
+            check_warning "SECURITY: Hardcoded production domain detected"
+            log_message "WARN" "Found hardcoded domain - should use environment variables"
+        fi
+        
+        # Check for default SSH port
+        if grep -q "20202" /root/virtualizor-server-setup.sh 2>/dev/null; then
+            check_warning "SECURITY: Default SSH port 20202 detected"
+            log_message "WARN" "Consider using non-default SSH port for security"
+        fi
+        
+        # Check for default SSH user
+        if grep -q "zabbixssh" /root/virtualizor-server-setup.sh 2>/dev/null; then
+            check_warning "SECURITY: Default SSH user 'zabbixssh' detected"
+            log_message "WARN" "Consider using unique SSH username for security"
+        fi
+    fi
+    
+    # Check for environment variables
+    if [ -n "${ZABBIX_SERVER_DOMAIN:-}" ]; then
+        check_passed "ZABBIX_SERVER_DOMAIN environment variable set"
+        if [[ "${ZABBIX_SERVER_DOMAIN}" == *"example.com"* ]]; then
+            check_warning "Using example domain - update for production"
+        fi
     else
-        check_failed "ping not available"
+        check_warning "ZABBIX_SERVER_DOMAIN not set - using defaults"
+    fi
+    
+    if [ -n "${SSH_TUNNEL_PORT:-}" ]; then
+        check_passed "SSH_TUNNEL_PORT environment variable set"
+        if [ "${SSH_TUNNEL_PORT}" == "20202" ] || [ "${SSH_TUNNEL_PORT}" == "22" ] || [ "${SSH_TUNNEL_PORT}" == "2222" ]; then
+            check_warning "SECURITY: Using common SSH port (${SSH_TUNNEL_PORT})"
+        fi
+    else
+        check_info "SSH_TUNNEL_PORT not set - using defaults"
+    fi
+    
+    if [ -n "${SSH_TUNNEL_USER:-}" ]; then
+        check_passed "SSH_TUNNEL_USER environment variable set"
+        if [ "${SSH_TUNNEL_USER}" == "zabbixssh" ] || [ "${SSH_TUNNEL_USER}" == "zabbix" ]; then
+            check_warning "SECURITY: Using predictable SSH username (${SSH_TUNNEL_USER})"
+        fi
+    else
+        check_info "SSH_TUNNEL_USER not set - using defaults"
     fi
     
     echo ""

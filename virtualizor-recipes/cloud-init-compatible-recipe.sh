@@ -3,7 +3,37 @@
 # Virtualizor Recipe: Cloud-Init Compatible with Multi-OS Support
 # This recipe is designed to work with cloud-init and systemd across all Linux distributions
 # Supports Ubuntu, Debian, RHEL, CentOS, AlmaLinux, Rocky Linux, and more
-#
+# Author: Zabbix Monitor Project
+
+# =============================================================================
+# CONFIGURATION SECTION - CUSTOMIZE FOR YOUR ENVIRONMENT
+# =============================================================================
+
+# ⚠️ SECURITY WARNING: Replace ALL example values with YOUR actual configuration
+export ZABBIX_SERVER_DOMAIN="your-monitor-server.example.com"  # ⚠️ CHANGE THIS!
+export SSH_TUNNEL_PORT="2022"        # ⚠️ Use non-default port for security
+export SSH_TUNNEL_USER="zabbix-user" # ⚠️ Use unique username
+export ZABBIX_VERSION="6.4"
+export ZABBIX_SERVER_PORT="10051"
+
+# Validation function
+validate_configuration() {
+    if [[ "$ZABBIX_SERVER_DOMAIN" == "your-monitor-server.example.com" ]] || 
+       [[ "$ZABBIX_SERVER_DOMAIN" == "monitor.cloudgeeks.in" ]]; then
+        echo "❌ ERROR: Using example domain. Update CONFIGURATION SECTION with your actual server details."
+        return 1
+    fi
+    return 0
+}
+
+# Validate before proceeding
+if ! validate_configuration; then
+    exit 1
+fi
+
+# =============================================================================
+# CLOUD-INIT COMPATIBLE RECIPE
+# =============================================================================
 
 # Cloud-init compatible header
 # This section can be used in cloud-init user-data as well
