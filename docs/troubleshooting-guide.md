@@ -891,6 +891,36 @@ bash -n virtualizor-server-setup.sh
 3. Use `--diagnose` flag for comprehensive system check
 4. Review logs in `/var/log/zabbix-scripts/`
 
+### AlmaLinux 10 Package Compatibility Fix - RESOLVED (July 21, 2025)
+
+**Issue**: AlmaLinux 10 installation failed with 404 error when downloading Zabbix packages.
+
+**Symptoms:**
+
+```log
+HTTP request sent, awaiting response... 404 Not Found
+ERROR: Cannot access 'https://repo.zabbix.com/zabbix/6.4/rhel/10/x86_64/zabbix-release-6.4-1.el10.noarch.rpm'
+Zabbix agent installation failed
+```
+
+**Root Cause:**
+
+- Zabbix repository doesn't yet have packages for Enterprise Linux 10 (el10)
+- Script was using `OS_VERSION="10"` directly from AlmaLinux 10's `/etc/os-release`
+- Repository URLs constructed as `rhel/10/x86_64/` which don't exist
+
+**Solution Applied:**
+
+```bash
+# AlmaLinux 10 compatibility: use RHEL 9 packages (el10 packages don't exist yet)
+if [[ "$ID" == "almalinux" && "$OS_VERSION" == "10" ]]; then
+    log_info "AlmaLinux 10 detected - using RHEL 9 packages for Zabbix compatibility"
+    OS_VERSION="9"
+fi
+```
+
+**Result**: AlmaLinux 10 now successfully installs Zabbix using compatible RHEL 9 packages.
+
 ### Systemd Service Issues - EXIT CODE 203/EXEC
 
 **Issue**: Service fails with `status=203/EXEC` error during reboot persistence.

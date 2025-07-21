@@ -481,6 +481,12 @@ detect_os() {
             OS_FAMILY="rhel"
             OS_ID="$ID"
             OS_VERSION="${VERSION_ID%%.*}"
+            
+            # AlmaLinux 10 compatibility: use RHEL 9 packages (el10 packages don't exist yet)
+            if [[ "$ID" == "almalinux" && "$OS_VERSION" == "10" ]]; then
+                log_info "AlmaLinux 10 detected - using RHEL 9 packages for Zabbix compatibility"
+                OS_VERSION="9"
+            fi
             ;;
         *)
             log_error "Unsupported OS: $ID"
@@ -951,14 +957,18 @@ EOF
 stage_tunnel_setup() {
     log_stage "STAGE: TUNNEL-SETUP - Setting up SSH tunnel"
     
+    local ssh_host="${1:-$DEFAULT_HOME_SERVER_IP}"
+    local ssh_port="${2:-$DEFAULT_HOME_SERVER_SSH_PORT}"
+    local ssh_user="${3:-$DEFAULT_SSH_USER}"
+    
     # Check if SSH key exists, generate if needed
     if [ ! -f "$DEFAULT_SSH_KEY" ]; then
         log_info "Generating SSH key for tunnel"
-        generate_tunnel_ssh_key "$DEFAULT_SSH_KEY"
+        generate_tunnel_ssh_key "$DEFAULT_SSH_KEY" "$ssh_host" "$ssh_port" "$ssh_user"
     fi
     
-    # Create tunnel service
-    if create_ssh_tunnel_service; then
+    # Create tunnel service with custom parameters
+    if create_ssh_tunnel_service "$ssh_host" "$ssh_port" "$ssh_user"; then
         log_info "SSH tunnel configured successfully"
         save_state "$STAGE_COMPLETE" "tunnel_configured=true"
         return 0
@@ -1172,6 +1182,9 @@ configure_zabbix_for_tunnel() {
 
 generate_tunnel_ssh_key() {
     local ssh_key="$1"
+    local ssh_host="${2:-$DEFAULT_HOME_SERVER_IP}"
+    local ssh_port="${3:-$DEFAULT_HOME_SERVER_SSH_PORT}"
+    local ssh_user="${4:-$DEFAULT_SSH_USER}"
     local key_comment="zabbix-tunnel-$(hostname)-$(date +%Y%m%d)"
     
     mkdir -p "$(dirname "$ssh_key")"
@@ -1195,9 +1208,14 @@ Generated: $(date '+%Y-%m-%d %H:%M:%S')
 Hostname: $(hostname)
 Server IP: $(hostname -I | awk '{print $1}')
 
+TUNNEL CONNECTION DETAILS:
+- Target Server: ${ssh_host}:${ssh_port}
+- SSH User: ${ssh_user}
+- Tunnel Port: ${DEFAULT_ZABBIX_SERVER_PORT}
+
 ADMINISTRATOR ACTION REQUIRED:
 1. Copy the SSH public key below to your Zabbix server
-2. Add it to the zabbixssh user's authorized_keys
+2. Add it to ${ssh_user}@${ssh_host}:~/.ssh/authorized_keys
 3. Restart the tunnel service: systemctl start zabbix-tunnel
 
 SSH PUBLIC KEY (copy this entire line):
@@ -1213,6 +1231,7 @@ Quick access commands:
 - View this info: cat /root/zabbix_ssh_key_info.txt
 - Copy public key: cat /root/zabbix_tunnel_public_key.txt
 - Check tunnel status: systemctl status zabbix-tunnel
+- Test SSH connection: ssh -i $ssh_key -p ${ssh_port} ${ssh_user}@${ssh_host}
 ========================================
 EOF
         
@@ -1237,6 +1256,12 @@ EOF
 }
 
 create_ssh_tunnel_service() {
+    local ssh_host="${1:-$DEFAULT_HOME_SERVER_IP}"
+    local ssh_port="${2:-$DEFAULT_HOME_SERVER_SSH_PORT}"
+    local ssh_user="${3:-$DEFAULT_SSH_USER}"
+    
+    log_info "Creating SSH tunnel service for ${ssh_user}@${ssh_host}:${ssh_port}"
+    
     # Create systemd service for SSH tunnel
     cat > /etc/systemd/system/zabbix-tunnel.service << EOF
 [Unit]
@@ -1256,8 +1281,8 @@ ExecStart=/usr/bin/ssh -i ${DEFAULT_SSH_KEY} \\
     -o UserKnownHostsFile=/dev/null \\
     -o BatchMode=yes \\
     -N -R ${DEFAULT_ZABBIX_SERVER_PORT}:localhost:${DEFAULT_ZABBIX_SERVER_PORT} \\
-    -p ${DEFAULT_HOME_SERVER_SSH_PORT} \\
-    ${DEFAULT_SSH_USER}@${DEFAULT_HOME_SERVER_IP}
+    -p ${ssh_port} \\
+    ${ssh_user}@${ssh_host}
 Restart=always
 RestartSec=60
 StandardOutput=journal
@@ -1271,7 +1296,7 @@ EOF
     systemctl enable zabbix-tunnel
     
     # Don't start yet - requires manual SSH key setup
-    log_info "SSH tunnel service created (requires manual SSH key setup)"
+    log_info "SSH tunnel service created for ${ssh_host} (requires manual SSH key setup)"
     return 0
 }
 
@@ -2026,16 +2051,16 @@ main() {
             stage_updates
             ;;
         "$STAGE_POST_REBOOT")
-            stage_post_reboot && stage_zabbix_install "$zabbix_version" && stage_zabbix_configure && stage_tunnel_setup && stage_complete
+            stage_post_reboot && stage_zabbix_install "$zabbix_version" && stage_zabbix_configure && stage_tunnel_setup "$ssh_host" "$ssh_port" "$ssh_user" && stage_complete
             ;;
         "$STAGE_ZABBIX_INSTALL")
-            stage_zabbix_install "$zabbix_version" && stage_zabbix_configure && stage_tunnel_setup && stage_complete
+            stage_zabbix_install "$zabbix_version" && stage_zabbix_configure && stage_tunnel_setup "$ssh_host" "$ssh_port" "$ssh_user" && stage_complete
             ;;
         "$STAGE_ZABBIX_CONFIGURE")
-            stage_zabbix_configure && stage_tunnel_setup && stage_complete
+            stage_zabbix_configure && stage_tunnel_setup "$ssh_host" "$ssh_port" "$ssh_user" && stage_complete
             ;;
         "$STAGE_TUNNEL_SETUP")
-            stage_tunnel_setup && stage_complete
+            stage_tunnel_setup "$ssh_host" "$ssh_port" "$ssh_user" && stage_complete
             ;;
         "$STAGE_COMPLETE")
             stage_complete
