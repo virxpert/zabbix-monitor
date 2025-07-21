@@ -1,29 +1,59 @@
 # Virtualizor Configuration Guide
 
-## 🔧 Dynamic Configuration for Zabbix Monitor Scripts
+## � Runtime Configuration Injection for Zabbix Monitor Scripts
 
-This guide explains how to configure the Zabbix monitoring scripts for different Virtualizor deployment scenarios.
+This guide explains how to configure Zabbix monitoring scripts for Virtualizor automated provisioning using **runtime configuration injection** - the solution for configuring servers that don't exist yet.
 
-## 🔒 Security First
+## 💡 The Runtime Configuration Solution
 
-**⚠️ CRITICAL SECURITY REQUIREMENTS:**
+**Traditional Problem**: You can't pre-configure servers before they're provisioned.
 
-1. **Never use example/default values in production**
-2. **Always use unique ports (avoid 22, 2222, 20202)**
-3. **Use unpredictable usernames (avoid 'zabbix', 'zabbixssh')**
-4. **Protect configuration from unauthorized access**
+**✅ Our Solution**: Runtime configuration injection:
+1. **Download**: Recipe downloads the latest script during provisioning
+2. **Inject**: Recipe modifies the script with your configuration values using `sed`
+3. **Execute**: Configured script runs automatically with your settings
+
+## 🔒 Security First - Administrator Trust Model
+
+**⚠️ CRITICAL SECURITY PRINCIPLE:**
+
+1. **Administrator Responsibility**: System administrators are trusted to configure appropriate security settings
+2. **Minimal Validation**: Only prevents deployment with placeholder example domain
+3. **Clean Configuration**: No multiple fallback options that could create security vulnerabilities
+4. **Single Configuration Path**: One clear configuration method to prevent confusion
 
 ## 📋 Configuration Methods
 
-### **Method 1: Environment Variables (Recommended)**
+### **Method 1: Virtualizor Recipe with Runtime Injection** ⭐ **RECOMMENDED**
 
-Best for automated deployments and CI/CD integration:
+Best for automated Virtualizor deployments with configuration validation:
+
+```bash
+# 1. Download recipe with runtime configuration injection
+wget https://raw.githubusercontent.com/virxpert/zabbix-monitor/main/virtualizor-recipes/direct-download-recipe.sh
+
+# 2. Edit ONLY the configuration section
+nano direct-download-recipe.sh
+
+# 3. Replace with YOUR actual values:
+ZABBIX_SERVER_DOMAIN="monitoring.yourcompany.com"   # YOUR server
+SSH_TUNNEL_PORT="8472"                             # YOUR unique port
+SSH_TUNNEL_USER="acme-monitoring-agent"            # YOUR unique username
+ZABBIX_VERSION="6.4"                               # Version to install
+ZABBIX_SERVER_PORT="10051"                         # Zabbix port
+
+# 4. Upload to Virtualizor - it handles the rest automatically!
+```
+
+### **Method 2: Environment Variables** (Manual execution)
+
+Best for direct script execution outside Virtualizor:
 
 ```bash
 # Set environment variables before script execution
 export ZABBIX_SERVER_DOMAIN="monitoring.yourcompany.com"
-export SSH_TUNNEL_PORT="2022"
-export SSH_TUNNEL_USER="zbx-monitor"
+export SSH_TUNNEL_PORT="8472"
+export SSH_TUNNEL_USER="acme-monitoring-agent"
 export ZABBIX_VERSION="6.4"
 export ZABBIX_SERVER_PORT="10051"
 
@@ -31,9 +61,9 @@ export ZABBIX_SERVER_PORT="10051"
 curl -fsSL https://raw.githubusercontent.com/virxpert/zabbix-monitor/main/scripts/virtualizor-server-setup.sh | bash
 ```
 
-### **Method 2: Command-Line Parameters**
+### **Method 3: Command-Line Parameters** (Manual execution)
 
-Best for direct script execution:
+Best for direct script execution with explicit parameters:
 
 ```bash
 wget -O /tmp/setup.sh https://raw.githubusercontent.com/virxpert/zabbix-monitor/main/scripts/virtualizor-server-setup.sh
@@ -41,55 +71,54 @@ chmod +x /tmp/setup.sh
 
 ./setup.sh \
     --ssh-host "monitoring.yourcompany.com" \
-    --ssh-port "2022" \
-    --ssh-user "zbx-monitor" \
+    --ssh-port "8472" \
+    --ssh-user "acme-monitoring-agent" \
     --zabbix-version "6.4" \
     --zabbix-server-port "10051"
 ```
 
-### **Method 3: Recipe Configuration**
+## 🎯 Virtualizor Recipe Deployment (Runtime Injection)
 
-Best for Virtualizor recipe deployment:
-
-1. **Edit Recipe File**: Modify the configuration section in your chosen recipe
-2. **Update Values**: Replace example values with your actual configuration
-3. **Deploy Recipe**: Use the updated recipe in Virtualizor
-
-## 🎯 Virtualizor Recipe Deployment
-
-### **Option A: Direct Download Recipe (Simplest)**
+### **Step 1: Download and Customize Recipe**
 
 ```bash
-# 1. Download and customize the recipe
+# Download the smart recipe with runtime configuration injection
 wget https://raw.githubusercontent.com/virxpert/zabbix-monitor/main/virtualizor-recipes/direct-download-recipe.sh
 
-# 2. Edit the configuration section
+# Edit configuration section with YOUR infrastructure details
 nano direct-download-recipe.sh
-
-# 3. Update these lines with YOUR values:
-export ZABBIX_SERVER_DOMAIN="your-actual-server.com"    # ⚠️ CHANGE THIS
-export SSH_TUNNEL_PORT="your-unique-port"               # ⚠️ CHANGE THIS  
-export SSH_TUNNEL_USER="your-unique-username"           # ⚠️ CHANGE THIS
-
-# 4. Deploy in Virtualizor as post-installation script
 ```
 
-### **Option B: Embedded Script Recipe (Offline-Ready)**
+### **Step 2: Configure YOUR Infrastructure Values**
+
+**Edit ONLY these lines in the recipe file:**
 
 ```bash
-# 1. Download the embedded recipe
-wget https://raw.githubusercontent.com/virxpert/zabbix-monitor/main/virtualizor-recipes/embedded-script-recipe.sh
+# =============================================================================
+# CONFIGURATION SECTION - EDIT THESE VALUES FOR YOUR ENVIRONMENT  
+# =============================================================================
 
-# 2. Customize configuration section
-# 3. Deploy in Virtualizor - works even without internet during provisioning
+# ⚠️ MANDATORY: CUSTOMIZE THESE VALUES FOR YOUR INFRASTRUCTURE
+ZABBIX_SERVER_DOMAIN="monitor.yourcompany.com"    # ⚠️ YOUR monitoring server
+SSH_TUNNEL_PORT="2847"                           # ⚠️ YOUR unique SSH port
+SSH_TUNNEL_USER="zbx-tunnel-user"                # ⚠️ YOUR unique username
+ZABBIX_VERSION="6.4"                             # Zabbix version to install
+ZABBIX_SERVER_PORT="10051"                       # Zabbix server port
 ```
 
-### **Option C: Cloud-Init Compatible**
+### **Step 3: Security Validation (Minimal)**
 
-```bash
-# 1. Use for cloud-init or systemd-based deployments  
-# 2. Supports multi-boot scenarios and complex provisioning
-```
+The recipe performs minimal validation to prevent accidental deployment:
+
+- ❌ **Blocks example domain**: `monitor.yourcompany.com`
+- ✅ **Administrator Trust**: Trusts administrators to configure appropriate security settings
+- ✅ **Clean Configuration**: Single configuration path without security vulnerabilities
+
+### **Step 4: Deploy in Virtualizor**
+
+1. **Upload recipe** to Virtualizor as "Post Installation Script"
+2. **Apply to VM plans** - recipe runs automatically during server creation  
+3. **Monitor logs** at `/var/log/virtualizor-recipe.log` for execution status
 
 ## 🔧 Configuration Parameters
 
@@ -115,14 +144,11 @@ wget https://raw.githubusercontent.com/virxpert/zabbix-monitor/main/virtualizor-
 ```bash
 # ✅ GOOD Examples:
 ZABBIX_SERVER_DOMAIN="monitor.internal.mycompany.com"
-SSH_TUNNEL_PORT="2847"         # Unique, non-standard port
-SSH_TUNNEL_USER="zbx-tun-usr"  # Unique, unpredictable username
-
-# ❌ BAD Examples (Never use these):
-ZABBIX_SERVER_DOMAIN="monitor.cloudgeeks.in"  # Example domain
-SSH_TUNNEL_PORT="22"                           # Standard SSH port  
-SSH_TUNNEL_USER="zabbix"                       # Predictable username
+SSH_TUNNEL_PORT="2847"         # Administrator-chosen unique port
+SSH_TUNNEL_USER="zbx-tun-usr"  # Administrator-chosen unique username
 ```
+
+**Note**: Administrators are responsible for choosing appropriate security settings.
 
 ### **Network Configuration**
 
@@ -149,14 +175,10 @@ SSH_TUNNEL_USER="zabbix"                       # Predictable username
 
 ```bash
 # Error: "Using example domain"
-# Fix: Update ZABBIX_SERVER_DOMAIN with your actual server
-
-# Error: "Using common SSH port"  
-# Fix: Choose unique port (e.g., 2000-9000 range, avoid common ports)
-
-# Error: "Using predictable username"
-# Fix: Use unique username (e.g., zbx-mon-user, not zabbix)
+# Fix: Update ZABBIX_SERVER_DOMAIN with your actual monitoring server domain
 ```
+
+**Note**: Recipe performs minimal validation - administrators are trusted to configure appropriate security settings.
 
 ### **Runtime Issues**
 

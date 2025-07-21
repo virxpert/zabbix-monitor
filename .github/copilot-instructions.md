@@ -21,12 +21,11 @@ Before writing ANY new code, ALWAYS check existing scripts in `/scripts/` and `/
 - Catch and handle all error types gracefully
 - Use error traps to catch unexpected failures
 
-### 3. Documentation Updates (MANDATORY)
-- **Update documentation after final checks** and testing
-- Document all error conditions and recovery procedures
-- Include troubleshooting guides for common issues
-- Update help text and usage examples
-- Keep documentation synchronized with code changes
+### 3. Administrator Trust Model (MANDATORY)
+- **Trust administrators to configure security settings appropriately**
+- **Minimal validation** - only prevent deployment with placeholder values
+- **Clean configuration** - no multiple fallback options that create security vulnerabilities
+- **Single configuration path** - clear, straightforward configuration without ambiguity
 
 ### 4. Script Simplicity (MANDATORY)
 - **Keep scripts as simple as possible** while maintaining functionality

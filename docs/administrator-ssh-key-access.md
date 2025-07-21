@@ -181,7 +181,7 @@ whoami
 
 ```bash
 # Test SSH key manually
-ssh -i /root/.ssh/zabbix_tunnel_key -p 20202 zabbixssh@monitor.cloudgeeks.in
+ssh -i /root/.ssh/zabbix_tunnel_key -p your-ssh-port your-ssh-user@your-monitor-server.com
 
 # Check key format
 ssh-keygen -l -f /root/.ssh/zabbix_tunnel_key.pub

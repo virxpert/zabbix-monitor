@@ -1,72 +1,72 @@
 # Virtualizor Recipe Integration Guide
 
-This guide explains how to properly integrate the Zabbix monitoring setup into Virtualizor recipes for automated server provisioning.
+This guide explains how to integrate the Zabbix monitoring setup into Virtualizor recipes using **runtime configuration injection** for automated server provisioning.
 
-## 🔒 CRITICAL: Pre-Configuration Required
+## � Runtime Configuration Injection - The Solution
 
-**⚠️ IMPORTANT**: Virtualizor recipes execute automatically without user interaction. **ALL configuration values MUST be set in the recipe file BEFORE uploading to Virtualizor.**
+**✅ The Problem Solved**: Traditional approaches required pre-configuring servers that don't exist yet during automated provisioning. Our new approach downloads scripts and injects configuration values at runtime during server creation.
 
-### Configuration Requirements
+### How Runtime Configuration Injection Works
 
-1. **Edit recipe file** with your actual server details
-2. **Replace ALL example values** before deployment  
-3. **Test configuration** on development server first
-4. **No runtime prompts** - everything must be pre-configured
+1. **Recipe Execution**: Virtualizor runs your recipe during server provisioning
+2. **Script Download**: Recipe downloads the latest master script from GitHub
+3. **Configuration Injection**: Recipe uses `sed` to inject YOUR configuration values into the downloaded script
+4. **Automated Execution**: Modified script runs with your settings - no manual intervention needed
 
 ## 📋 Step-by-Step Integration
 
-### Step 1: Choose Your Recipe Type
+### Step 1: Choose Your Recipe (Runtime Injection Enabled)
 
-**Option 1: Direct Download Recipe (Recommended)**
-- Downloads latest script during provisioning
-- Requires internet access during VM creation
-- Always gets newest version
-- Smallest recipe file
+**✅ Option 1: Direct Download Recipe (Recommended)**
+- **Runtime injection**: Downloads and configures script during provisioning
+- **Always current**: Gets the latest script version automatically  
+- **Network resilient**: Multiple fallback download methods
+- **Security validated**: Prevents using example values in production
 
-**Option 2: Embedded Script Recipe**  
-- Complete script embedded in recipe file
-- Works in air-gapped environments
-- Larger recipe file but no external dependencies
-
-**Option 3: Cloud-Init Compatible**
-- Uses systemd services for complex deployments
-- Best for enterprise environments
+**✅ Option 2: Smart Dynamic Recipe (Alternative)**
+- **Same functionality**: Identical runtime configuration injection
+- **Clean implementation**: More focused code structure
+- **Full validation**: Complete security and configuration checking
 
 ### Step 2: Download and Configure Recipe
 
-**For Direct Download Method:**
+**For Runtime Configuration Injection:**
 
 ```bash
-# 1. Download the recipe
+# 1. Download the recipe with runtime configuration injection
 wget https://raw.githubusercontent.com/virxpert/zabbix-monitor/main/virtualizor-recipes/direct-download-recipe.sh
 
-# 2. Edit configuration section
+# 2. Edit ONLY the configuration section (lines 15-20)
 nano direct-download-recipe.sh
 
-# 3. Update CONFIGURATION SECTION with YOUR values:
-export ZABBIX_SERVER_DOMAIN="monitor.yourcompany.com"    # ⚠️ CHANGE THIS
-export SSH_TUNNEL_PORT="2847"                           # ⚠️ CHANGE THIS
-export SSH_TUNNEL_USER="zbx-tunnel-user"                # ⚠️ CHANGE THIS
+# 3. Replace these values with YOUR actual infrastructure details:
+ZABBIX_SERVER_DOMAIN="monitor.yourcompany.com"    # ⚠️ YOUR monitoring server
+SSH_TUNNEL_PORT="2847"                           # ⚠️ YOUR unique SSH port  
+SSH_TUNNEL_USER="zbx-tunnel-user"                # ⚠️ YOUR unique username
+ZABBIX_VERSION="6.4"                             # Zabbix version to install
+ZABBIX_SERVER_PORT="10051"                       # Zabbix server port
 
 # 4. Save file - ready for Virtualizor upload
 ```
 
-### Step 3: Security Validation
+### Step 3: Security Validation (Built-In)
 
-**Before uploading to Virtualizor, verify:**
+**The recipe automatically validates your configuration:**
 
+✅ **Prevents Example Values**: Refuses to run with placeholder domain "monitor.yourcompany.com"
+✅ **Administrator Trust**: Trusts system administrators to configure appropriate security settings
+✅ **Clean Configuration**: No multiple fallback options that could create security vulnerabilities
+✅ **Production Safety**: Won't deploy with example domain value
+
+**Manual validation (optional):**
 ```bash
-# Check for example values (THESE WILL CAUSE FAILURES):
-grep -E "(your-monitor-server\.example\.com|monitor\.cloudgeeks\.in)" your-recipe.sh
-# Should return NO results
+# Check that you replaced the example value:
+grep "monitor\.yourcompany\.com" your-recipe.sh
+# Should return NO results (meaning you updated it)
 
-# Check for common insecure ports:  
-grep -E "(\"22\"|\"2222\"|\"20202\")" your-recipe.sh
-# Should return NO results (use unique ports)
-
-# Check for predictable usernames:
-grep -E "(\"zabbix\"|\"zabbixssh\"|\"monitoring\")" your-recipe.sh  
-# Should return NO results (use unique usernames)
+# Verify your actual configuration:
+grep "ZABBIX_SERVER_DOMAIN=" your-recipe.sh
+# Should show YOUR actual monitoring server
 ```
 
 ### Step 4: Upload and Deploy in Virtualizor

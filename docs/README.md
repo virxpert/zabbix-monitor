@@ -1,36 +1,63 @@
 # Zabbix Scripts & Utilities Documentation
 
 ## Overview
-This project provides self-contained, boot-safe scripts for Zabbix monitoring infrastructure. Each script is designed to run independently during system startup without user interaction, making them perfect for automated deployments and system initialization.
+This project provides comprehensive Zabbix monitoring automation with **runtime configuration injection** for Virtualizor automated server provisioning. The solution handles complete server lifecycle management with configuration values injected during provisioning.
 
-## Quick Start
+## 🚀 Quick Start
 
-### 1. Clone and Setup
+### **Option 1: Virtualizor Recipe Automation** ⭐ **RECOMMENDED**
+
 ```bash
-git clone https://github.com/virxpert/zabbix-monitor.git
-cd zabbix-monitor
-chmod +x scripts/*.sh
+# 1. Download recipe with runtime configuration injection
+wget https://raw.githubusercontent.com/virxpert/zabbix-monitor/main/virtualizor-recipes/direct-download-recipe.sh
+
+# 2. Edit configuration section with YOUR values
+nano direct-download-recipe.sh
+
+# 3. Upload to Virtualizor - automatic configuration injection during server creation!
 ```
 
-### 2. Basic Usage
+### **Option 2: Manual Server Setup**
+
 ```bash
-# Install Zabbix agent with defaults
-sudo ./scripts/install-zabbix-agent.sh
-
-# Install with custom server
-sudo ./scripts/install-zabbix-agent.sh --server 192.168.1.100 --hostname web01
-
-# Test mode (validate without installing)
-sudo ./scripts/install-zabbix-agent.sh --test
+# Download and execute the master provisioning script
+wget -O /tmp/virtualizor-server-setup.sh https://raw.githubusercontent.com/virxpert/zabbix-monitor/main/scripts/virtualizor-server-setup.sh
+chmod +x /tmp/virtualizor-server-setup.sh
+/tmp/virtualizor-server-setup.sh
 ```
 
-### 3. Boot Integration
-```bash
-# Create systemd service
-sudo cp config/zabbix-install.service /etc/systemd/system/
-sudo systemctl enable zabbix-install.service
-sudo systemctl start zabbix-install.service
-```
+## 📋 Documentation Structure
+
+### **🎯 Virtualizor Integration Guides** (Primary Focus)
+
+| Document | Purpose | Audience |
+|----------|---------|----------|
+| **[Runtime Configuration Injection](runtime-configuration-injection.md)** | Complete guide to the runtime injection approach | All Users |
+| **[Virtualizor Recipe Integration](virtualizor-recipe-integration.md)** | Step-by-step recipe setup and deployment | System Admins |
+| **[Virtualizor Configuration Guide](virtualizor-configuration-guide.md)** | Configuration methods and security practices | DevOps Teams |
+
+### **🔧 Technical Implementation**
+
+| Document | Purpose | Audience |
+|----------|---------|----------|
+| **[Installation Guide](installation.md)** | Manual installation procedures | System Admins |
+| **[Usage Guide](usage.md)** | Script usage examples and parameters | All Users |
+| **[Quality Assurance](quality-assurance.md)** | Testing and validation procedures | Developers |
+
+### **🛠️ Server Configuration**
+
+| Document | Purpose | Audience |
+|----------|---------|----------|
+| **[Zabbix Server Configuration](zabbix-server-configuration.md)** | Complete server-side setup | Infrastructure Teams |
+| **[SSH Tunnel Setup Guide](ssh-tunnel-setup-guide.md)** | Secure tunnel configuration | Security Teams |
+| **[Administrator SSH Key Access](administrator-ssh-key-access.md)** | SSH key management procedures | System Admins |
+
+### **🔍 Troubleshooting & Support**
+
+| Document | Purpose | Audience |
+|----------|---------|----------|
+| **[Troubleshooting Guide](troubleshooting-guide.md)** | Common issues and solutions | All Users |
+| **[Virtualizor Master Script](virtualizor-master-script.md)** | Advanced script configuration | Advanced Users |
 
 ## Project Structure
 

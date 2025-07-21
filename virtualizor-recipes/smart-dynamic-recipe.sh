@@ -1,10 +1,9 @@
 #!/bin/bash
 #
-# Virtualizor Recipe: Runtime Configuration Injection
-# Downloads script, modifies it with YOUR configuration, then executes it
-# Perfect for automated server provisioning - no pre-configuration needed!
+# Virtualizor Recipe: Dynamic Configuration with Runtime Script Modification
+# This recipe downloads the script, injects your configuration values, and executes it
+# Perfect for Virtualizor automated server provisioning where servers don't exist yet
 # Author: Zabbix Monitor Project
-#
 
 set -euo pipefail
 
@@ -12,17 +11,12 @@ set -euo pipefail
 # CONFIGURATION SECTION - EDIT THESE VALUES FOR YOUR ENVIRONMENT
 # =============================================================================
 
-# ⚠️ MANDATORY: CUSTOMIZE THESE VALUES FOR YOUR INFRASTRUCTURE
+# ⚠️ CUSTOMIZE THESE VALUES FOR YOUR INFRASTRUCTURE
 ZABBIX_SERVER_DOMAIN="monitor.yourcompany.com"    # ⚠️ YOUR monitoring server
 SSH_TUNNEL_PORT="2847"                           # ⚠️ YOUR unique SSH port
 SSH_TUNNEL_USER="zbx-tunnel-user"                # ⚠️ YOUR unique username
 ZABBIX_VERSION="6.4"                             # Zabbix version to install
 ZABBIX_SERVER_PORT="10051"                       # Zabbix server port
-
-# SECURITY NOTES:
-# - Replace 'monitor.yourcompany.com' with YOUR actual monitoring server
-# - Use a unique SSH port (avoid 22, 2222, 20202)
-# - Use a unique username (avoid 'zabbix', 'monitoring', 'zabbixssh')
 
 # =============================================================================
 # RECIPE EXECUTION LOGIC - DO NOT MODIFY BELOW THIS LINE
@@ -59,6 +53,7 @@ validate_configuration() {
     
     log_message "✅ Configuration validation passed"
 }
+
 # Wait for network connectivity
 wait_for_network() {
     log_message "🌐 Waiting for network connectivity..."
@@ -103,6 +98,8 @@ download_script() {
     
     chmod +x "$TEMP_SCRIPT"
     log_message "✅ Script downloaded and made executable"
+}
+
 # Inject configuration values into the downloaded script
 configure_script() {
     log_message "⚙️ Injecting configuration values into script..."
@@ -174,7 +171,7 @@ cleanup() {
 
 # Main execution flow
 main() {
-    log_message "🎯 Starting Virtualizor Recipe: Runtime Configuration Injection"
+    log_message "🎯 Starting Virtualizor Recipe: Dynamic Configuration"
     log_message "   Recipe: Direct Download with Runtime Configuration"
     log_message "   Author: Zabbix Monitor Project"
     
@@ -191,97 +188,3 @@ main() {
 
 # Execute main function
 main "$@"
-    
-    while [ $retry -lt $max_retries ]; do
-        log_message "Downloading setup script (attempt $((retry + 1))/$max_retries): $SCRIPT_URL"
-        
-        if wget -O "$SCRIPT_PATH" "$SCRIPT_URL" >/dev/null 2>&1; then
-            # Verify download was successful and file is not empty
-            if [ -s "$SCRIPT_PATH" ]; then
-                log_message "Script downloaded successfully ($(wc -c < "$SCRIPT_PATH") bytes)"
-                return 0
-            else
-                log_message "Downloaded file is empty, retrying..."
-            fi
-        else
-            log_message "Download failed, retrying..."
-        fi
-        
-        retry=$((retry + 1))
-        [ $retry -lt $max_retries ] && sleep 5
-    done
-    
-    log_message "ERROR: Failed to download script after $max_retries attempts"
-    return 1
-}
-
-# Download with retry logic
-download_script || {
-    log_message "ERROR: Script download failed"
-    exit 1
-}
-
-# Make it executable and validate
-chmod +x "$SCRIPT_PATH"
-log_message "Script made executable"
-
-# Basic script validation
-if ! bash -n "$SCRIPT_PATH" 2>/dev/null; then
-    log_message "ERROR: Downloaded script has syntax errors"
-    exit 1
-fi
-log_message "Script syntax validation passed"
-
-# Configuration validation for security
-validate_configuration() {
-    local warnings=0
-    
-    if [[ "$ZABBIX_SERVER_DOMAIN" == *"example.com"* ]] || [[ "$ZABBIX_SERVER_DOMAIN" == "your-monitor-server"* ]]; then
-        log_message "WARNING: Using example domain - Update ZABBIX_SERVER_DOMAIN with your real server"
-        warnings=$((warnings + 1))
-    fi
-    
-    if [ "$SSH_TUNNEL_PORT" = "22" ] || [ "$SSH_TUNNEL_PORT" = "2222" ] || [ "$SSH_TUNNEL_PORT" = "20202" ]; then
-        log_message "WARNING: Using common SSH port ($SSH_TUNNEL_PORT) - Consider using unique port for security"
-        warnings=$((warnings + 1))
-    fi
-    
-    if [[ "$SSH_TUNNEL_USER" == *"zabbix"* ]] || [ "$SSH_TUNNEL_USER" = "monitoring" ]; then
-        log_message "WARNING: Using predictable username ($SSH_TUNNEL_USER) - Consider using unique username"
-        warnings=$((warnings + 1))
-    fi
-    
-    if [ $warnings -gt 0 ]; then
-        log_message "SECURITY NOTICE: $warnings configuration warnings found"
-        log_message "For production use, customize configuration values in recipe file"
-    fi
-}
-
-# Validate configuration
-validate_configuration
-
-# Execute the script with runtime configuration
-log_message "Starting server setup with configuration:"
-log_message "  Server: $ZABBIX_SERVER_DOMAIN"
-log_message "  SSH Port: $SSH_TUNNEL_PORT" 
-log_message "  SSH User: $SSH_TUNNEL_USER"
-log_message "  Zabbix Version: $ZABBIX_VERSION"
-
-if "$SCRIPT_PATH" --ssh-host "$ZABBIX_SERVER_DOMAIN" \
-                  --ssh-port "$SSH_TUNNEL_PORT" \
-                  --ssh-user "$SSH_TUNNEL_USER" \
-                  --zabbix-version "$ZABBIX_VERSION" \
-                  --zabbix-server-port "$ZABBIX_SERVER_PORT"; then
-    log_message "=== Server setup completed successfully ==="
-    log_message "OS: $(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2 2>/dev/null || echo 'Unknown')"
-    log_message "Zabbix monitoring configured for: $ZABBIX_SERVER_DOMAIN:$ZABBIX_SERVER_PORT"
-    log_message "SSH tunnel configured for: $SSH_TUNNEL_USER@$ZABBIX_SERVER_DOMAIN:$SSH_TUNNEL_PORT"
-    log_message "SSH public key available in: /root/zabbix_tunnel_public_key.txt"
-else
-    exit_code=$?
-    log_message "ERROR: Server setup failed with exit code $exit_code"
-    log_message "Check setup logs: /var/log/zabbix-scripts/virtualizor-server-setup-*.log"
-    exit $exit_code
-fi
-
-log_message "=== Virtualizor Recipe Completed Successfully ==="
