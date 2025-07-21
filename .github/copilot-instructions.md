@@ -3,6 +3,9 @@
 ## **CRITICAL RULE: Always Review Before Coding**
 Before writing ANY new code, ALWAYS check existing scripts in `/scripts/` and `/docs/` to understand patterns, logging format, and error handling. Consistency prevents bugs.
 
+## **TEMPLATE USAGE WARNING**
+Files in `/scripts/` may be TEMPLATES demonstrating proper patterns. Look for "TEMPLATE SCRIPT" headers. Never use templates as-is - always customize configuration, validation, and logic for your specific use case.
+
 ## Project Architecture
 **Self-Contained Scripts**: Each script is fully independent and executable at boot time without user login. No script dependencies or shared libraries - everything needed is embedded within each script.
 
@@ -67,16 +70,20 @@ log_message() {
 
 ### Before Writing Code
 1. Read existing scripts in `/scripts/` to understand the self-contained patterns
-2. Check `/docs/` for existing functionality and user expectations
-3. Review test patterns in `/tests/` for validation approaches
-4. Understand boot-time constraints and network availability issues
+2. **IDENTIFY TEMPLATES**: Look for "TEMPLATE SCRIPT" headers - these are examples, not production scripts
+3. Check `/docs/` for existing functionality and user expectations
+4. Review test patterns in `/tests/` for validation approaches
+5. Understand boot-time constraints and network availability issues
 
 ### Creating New Scripts
-1. Single file approach: `[action-target].sh` (e.g., `install-zabbix-agent.sh`)
-2. Embed ALL required functions, configs, and logic within the script
-3. Create corresponding test in `/tests/test-[script-name].sh`
-4. Design for unattended execution during system boot
-5. Update documentation in `/docs/`
+1. **Start with template**: Copy structure from template scripts, customize all logic
+2. Single file approach: `[action-target].sh` (e.g., `install-zabbix-agent.sh`)
+3. Embed ALL required functions, configs, and logic within the script
+4. **Customize configuration block**: Update servers, paths, timeouts for your environment
+5. **Implement specific logic**: Replace template functions with actual requirements
+6. Create corresponding test in `/tests/test-[script-name].sh`
+7. Design for unattended execution during system boot
+8. Update documentation in `/docs/`
 
 ### Boot-Time Testing
 - Test scripts as root without login session
