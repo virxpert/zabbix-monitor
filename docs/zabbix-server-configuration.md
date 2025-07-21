@@ -1,10 +1,38 @@
-# Zabbix Server Configuration for SSH Tunnel Connections
+# Zabbix Server Configuration for Multi-Server SSH Tunnel Monitoring
 
-This document provides step-by-step instructions for configuring the Zabbix server to receive connections from agents via SSH reverse tunnels.
+This document provides step-by-step instructions for configuring **one Zabbix server** to monitor **unlimited guest servers** via SSH reverse tunnels.
 
-## Overview
+## Multi-Server Architecture Overview
 
-The Virtualizor server setup script establishes SSH reverse tunnels to connect Zabbix agents to the monitoring server running in a homelab environment behind NAT. This configuration provides secure monitoring without exposing Zabbix ports to the internet.
+The Virtualizor server setup script establishes SSH reverse tunnels from multiple guest servers to a single monitoring server. This enables **1-to-many monitoring** where one Zabbix instance can monitor hundreds of servers securely.
+
+### Architecture Diagram
+
+```text
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Guest Server  │    │   Guest Server  │    │   Guest Server  │
+│       #1        │    │       #2        │    │       #N        │
+│  Zabbix Agent   │    │  Zabbix Agent   │    │  Zabbix Agent   │
+│  :10050         │    │  :10050         │    │  :10050         │
+└─────────┬───────┘    └─────────┬───────┘    └─────────┬───────┘
+          │ SSH Tunnel           │ SSH Tunnel           │ SSH Tunnel  
+          │ (unique key)         │ (unique key)         │ (unique key)
+          ▼                      ▼                      ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Monitor Server                               │
+│  SSH User: zabbixssh  Port: 20202                             │
+│  ┌─────────────────┐                                          │
+│  │  Zabbix Server  │◄── Queries: 127.0.0.1:10050             │
+│  │  :10051         │    (all guests via localhost)            │
+│  └─────────────────┘                                          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key Benefits:**
+- **Unlimited Scaling**: One Zabbix server monitors any number of guests
+- **Individual Security**: Each server uses unique SSH key pairs
+- **Central Management**: Single monitoring configuration for all servers
+- **Network Security**: No exposed ports, encrypted tunnel connections
 
 ## Server Configuration Requirements
 

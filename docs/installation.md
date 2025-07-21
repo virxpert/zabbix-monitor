@@ -2,7 +2,22 @@
 
 ## Overview
 
-This guide covers the integration of `virtualizor-server-setup.sh` into **Virtualizor software recipes** for automated server provisioning during VM/container creation.
+This guide covers the integration of `virtualizor-server-setup.sh` into **Virtualizor software recipes** for automated server provisioning during VM/container creation. The architecture supports **one Zabbix server monitoring unlimited guest servers** via individual SSH tunnels.
+
+## Multi-Server Architecture
+
+```
+[Guest Server 1] ----SSH Tunnel---> 
+[Guest Server 2] ----SSH Tunnel---> [Monitor Server:20202] --> [Zabbix Server:10051]
+[Guest Server 3] ----SSH Tunnel---> 
+[Guest Server N] ----SSH Tunnel---> 
+```
+
+**Key Benefits:**
+- ✅ **Unlimited Scaling**: Deploy recipe to hundreds of servers
+- ✅ **Single Management Point**: One SSH user handles all guest connections  
+- ✅ **Secure Isolation**: Each server has unique SSH key
+- ✅ **Automatic Setup**: Script handles all tunnel configuration
 
 ## Quick Integration
 
@@ -157,39 +172,47 @@ If the recipe fails or is interrupted:
 
 ### SSH Key Collection
 
-After recipe completion, administrators need to collect SSH public keys:
+After recipe completion, administrators need to collect SSH public keys **from each guest server**:
 
 ```bash
-# Connect to the new server
-ssh root@new-server-ip
+# Connect to each new server individually
+ssh root@guest-server-1-ip
+ssh root@guest-server-2-ip
+# etc.
 
-# Get the SSH public key for tunnel
+# Get the SSH public key for tunnel (on each guest)
 cat /root/zabbix_tunnel_public_key.txt
 
-# View complete setup instructions
+# View complete setup instructions (on each guest)
 cat /root/zabbix_ssh_key_info.txt
 ```
 
 ### Zabbix Server Configuration
 
-Add the collected public key to your monitoring server:
+**Centralized Key Management** - Add collected public keys to monitoring server:
 
 ```bash
-# On monitoring server
-echo "ssh-rsa AAAAB3NzaC1yc2E... zabbix-tunnel-hostname-date" >> /home/zabbixssh/.ssh/authorized_keys
+# On monitoring server - APPEND each guest's key (don't overwrite)
+echo "ssh-rsa AAAAB3... zabbix-tunnel-guest1-20250721" >> /home/zabbixssh/.ssh/authorized_keys
+echo "ssh-rsa AAAAB3... zabbix-tunnel-guest2-20250721" >> /home/zabbixssh/.ssh/authorized_keys
+echo "ssh-rsa AAAAB3... zabbix-tunnel-guest3-20250721" >> /home/zabbixssh/.ssh/authorized_keys
 
-# Restart tunnel service on agent server
-systemctl start zabbix-tunnel
+# Start tunnel services on each guest server
+ssh root@guest1 "systemctl start zabbix-tunnel"
+ssh root@guest2 "systemctl start zabbix-tunnel" 
+ssh root@guest3 "systemctl start zabbix-tunnel"
 ```
 
 ### Host Configuration
 
-Add the new server to Zabbix web interface:
-- **Host name**: Server hostname
+Add **each server individually** to Zabbix web interface:
+- **Host name**: Unique server hostname (guest1, guest2, etc.)
 - **Visible name**: Friendly display name
-- **IP address**: `127.0.0.1` (via tunnel)
-- **Port**: `10050`
+- **IP address**: `127.0.0.1` (all servers use tunnel endpoint)
+- **Port**: `10050` (standard for all)
 - **Template**: Linux by Zabbix agent
+
+**Scaling Note**: This process scales to hundreds of servers - same steps, just repeat for each new guest server.
 
 ## Troubleshooting
 

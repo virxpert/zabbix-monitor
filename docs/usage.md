@@ -1,27 +1,58 @@
-# SSH Tunnel Configuration Usage Guide
+# Zabbix Scripts & Utilities - Usage Guide
 
-## Overview
+## Multi-Server Architecture Overview
 
-This guide covers the detailed configuration and usage of SSH tunnels for Zabbix monitoring, as implemented by `virtualizor-server-setup.sh`.
+This system supports **unlimited 1-to-many monitoring** where one Zabbix server monitors any number of guest servers through encrypted SSH tunnels.
 
-## Architecture Overview
+```
+[Guest Server 1] ----SSH Tunnel----> [Monitor Server:20202] --> [Zabbix Server:10051]
+[Guest Server 2] ----SSH Tunnel----> [Monitor Server:20202] --> [Zabbix Server:10051]  
+[Guest Server 3] ----SSH Tunnel----> [Monitor Server:20202] --> [Zabbix Server:10051]
+[Guest Server N] ----SSH Tunnel----> [Monitor Server:20202] --> [Zabbix Server:10051]
+```
 
-### SSH Tunnel Flow
+**Key Benefits:**
+- **Unlimited Scaling**: Monitor hundreds of servers from one Zabbix instance
+- **Individual Security**: Each server has unique SSH key pair
+- **Central Management**: Single monitoring server handles all connections
+- **Network Flexibility**: Works across complex network topologies
 
+## SSH Tunnel Architecture Details
+
+### Traditional vs Multi-Server Architecture
+
+**Single Server Flow:**
 ```
 [Agent Server] --SSH Tunnel--> [Monitoring Server] --Local--> [Zabbix Server]
     :10050                         :20202                        :10051
 ```
 
-**Key Components:**
-- **Agent Server**: Runs Zabbix agent, initiates reverse SSH tunnel
-- **SSH Tunnel**: Encrypted connection forwarding Zabbix traffic  
-- **Monitoring Server**: Accepts SSH connections, forwards to local Zabbix
-- **Zabbix Server**: Receives monitoring data via localhost connection
+**Multi-Server Flow:**
+```
+[Guest 1 :10050] --SSH--> [Monitor :20202] --Local--> [Zabbix :10051]
+[Guest 2 :10050] --SSH--> [Monitor :20202] --Local--> [Zabbix :10051]
+[Guest N :10050] --SSH--> [Monitor :20202] --Local--> [Zabbix :10051]
+```
 
 ## Automated Setup (via Master Script)
 
-### Basic Usage
+### Multiple Server Deployment
+
+**Deploy to Multiple Servers:**
+```bash
+# Deploy to server 1
+./virtualizor-server-setup.sh --banner-text "Production Web Server 1"
+
+# Deploy to server 2  
+./virtualizor-server-setup.sh --banner-text "Production Database Server"
+
+# Deploy to server N
+./virtualizor-server-setup.sh --banner-text "Application Server 5"
+```
+
+Each execution generates **unique SSH keys** and tunnel configuration for secure multi-server monitoring.
+
+### Basic Single Server Usage
 
 ```bash
 # Complete automated setup with defaults
