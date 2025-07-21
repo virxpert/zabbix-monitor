@@ -88,8 +88,12 @@ Match User zabbixssh
     ForceCommand /bin/false
 ```
 
-Restart SSH service:
+**Important**: Test the configuration before restarting SSH to avoid lockouts:
 ```bash
+# Test SSH configuration syntax
+sudo sshd -t
+
+# If test passes, then restart SSH service
 sudo systemctl restart sshd
 ```
 
@@ -314,6 +318,30 @@ sudo sshd -T | grep -E '(Port|AllowUsers|AllowTcpForwarding)'
 
 # Check firewall
 sudo ufw status
+```
+
+#### SSH Configuration Errors
+
+**Error: "Directive 'PrintMotd' is not allowed within a Match block"**
+
+```bash
+# Fix: Move PrintMotd outside the Match block or remove it
+sudo nano /etc/ssh/sshd_config
+
+# Find and move this line to the global section (before Match blocks):
+PrintMotd no
+
+# Or remove PrintMotd entirely from within the Match User block
+# Keep only these directives in the Match block:
+Match User zabbixssh
+    AllowTcpForwarding yes
+    X11Forwarding no
+    AllowAgentForwarding no
+    ForceCommand /bin/false
+
+# Always test configuration before restarting:
+sudo sshd -t
+sudo systemctl restart sshd
 ```
 
 #### Zabbix Server Not Receiving Data

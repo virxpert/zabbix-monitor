@@ -1,12 +1,12 @@
-# Runtime Configuration Injection Guide
+# Simple Recipe Configuration Guide
 
-## 🚀 The Revolutionary Approach to Virtualizor Automation
+## 🚀 The Clean Approach to Virtualizor Automation
 
 **The Challenge**: Traditional automation required configuring servers before they existed during Virtualizor provisioning.
 
-**✅ Our Solution**: **Runtime Configuration Injection** - Download scripts and inject your configuration values during server creation.
+**✅ Our Solution**: **Simple Parameter Passing** - Download scripts and pass your configuration values as command-line parameters.
 
-## 💡 How Runtime Configuration Injection Works
+## 💡 How the Simple Recipe Works
 
 ```text
 ┌─ Virtualizor Recipe Execution ─┐
@@ -17,44 +17,42 @@
 │ 2. Downloads master script     │
 │    from GitHub                 │
 │                                │
-│ 3. Uses sed to inject YOUR     │
-│    configuration values        │
+│ 3. Passes YOUR configuration   │
+│    as command parameters       │
 │                                │
-│ 4. Executes configured script  │
-│    automatically               │
+│ 4. Script runs with your       │
+│    settings automatically      │
 │                                │
 │ ✅ Server ready for monitoring │
 └────────────────────────────────┘
 ```
 
-## 🔧 Implementation Details
+## 🔧 Simple Implementation
 
-### **Configuration Injection Process**
+### **Configuration Process (Clean & Simple)**
 
 The recipe performs these operations automatically:
 
 ```bash
 # 1. Download the latest master script
-curl -fsSL "$SCRIPT_URL" -o "$TEMP_SCRIPT"
+wget -q --timeout=30 "$SCRIPT_URL" -O "$SCRIPT_PATH"
 
-# 2. Inject YOUR configuration values using sed
-sed -i "s|DEFAULT_HOME_SERVER_IP=.*|DEFAULT_HOME_SERVER_IP=\"$ZABBIX_SERVER_DOMAIN\"|g" "$TEMP_SCRIPT"
-sed -i "s|SSH_TUNNEL_PORT=.*|SSH_TUNNEL_PORT=\"$SSH_TUNNEL_PORT\"|g" "$TEMP_SCRIPT"
-sed -i "s|SSH_TUNNEL_USER=.*|SSH_TUNNEL_USER=\"$SSH_TUNNEL_USER\"|g" "$TEMP_SCRIPT"
-
-# 3. Execute the configured script with your settings
-"$TEMP_SCRIPT" --ssh-host "$ZABBIX_SERVER_DOMAIN" \
-               --ssh-port "$SSH_TUNNEL_PORT" \
-               --ssh-user "$SSH_TUNNEL_USER"
+# 2. Execute with YOUR configuration values as parameters
+"$SCRIPT_PATH" \
+    --ssh-host "$ZABBIX_SERVER_DOMAIN" \
+    --ssh-port "$SSH_TUNNEL_PORT" \
+    --ssh-user "$SSH_TUNNEL_USER" \
+    --zabbix-version "$ZABBIX_VERSION" \
+    --zabbix-server-port "$ZABBIX_SERVER_PORT"
 ```
 
-### **Security Validation System**
+### **Security Validation (Minimal & Clean)**
 
 Built-in validation prevents production failures:
 
 ```bash
-# Simple validation check:
-✅ Blocks example domain: "monitor.yourcompany.com"
+# Single validation check:
+✅ Blocks placeholder domain: "monitor.yourcompany.com"
 ❌ Exits with error if example value detected in production
 ```
 
@@ -62,31 +60,31 @@ Built-in validation prevents production failures:
 
 ## 🎯 Step-by-Step Implementation
 
-### **Step 1: Download Recipe with Runtime Injection**
+### **Step 1: Download the Simple Recipe**
 
 ```bash
-# Get the smart recipe with built-in configuration injection
+# Get the clean, concise recipe (only 64 lines!)
 wget https://raw.githubusercontent.com/virxpert/zabbix-monitor/main/virtualizor-recipes/direct-download-recipe.sh
 ```
 
 ### **Step 2: Configure YOUR Infrastructure**
 
-Edit **ONLY** the configuration section (lines 15-20):
+Edit **ONLY** the configuration section (lines 13-17):
 
 ```bash
 # =============================================================================
-# CONFIGURATION SECTION - EDIT THESE VALUES FOR YOUR ENVIRONMENT
+# CONFIGURATION - EDIT THESE VALUES FOR YOUR ENVIRONMENT
 # =============================================================================
 
-# ⚠️ MANDATORY: CUSTOMIZE THESE VALUES FOR YOUR INFRASTRUCTURE
 ZABBIX_SERVER_DOMAIN="monitor.yourcompany.com"    # ⚠️ YOUR monitoring server
-SSH_TUNNEL_PORT="2847"                           # ⚠️ YOUR unique SSH port
+SSH_TUNNEL_PORT="2847"                           # ⚠️ YOUR unique SSH port  
 SSH_TUNNEL_USER="zbx-tunnel-user"                # ⚠️ YOUR unique username
 ZABBIX_VERSION="6.4"                             # Zabbix version to install
 ZABBIX_SERVER_PORT="10051"                       # Zabbix server port
 ```
 
 **Replace with YOUR actual values:**
+
 ```bash
 # Example customization:
 ZABBIX_SERVER_DOMAIN="zabbix.internal.acme.com"
@@ -97,6 +95,49 @@ ZABBIX_SERVER_PORT="10051"
 ```
 
 ### **Step 3: Upload to Virtualizor**
+
+1. **Login to Virtualizor admin panel**
+2. **Navigate to**: Plans → Recipes → Add Recipe
+3. **Recipe Type**: Post Installation Script  
+4. **Copy entire recipe content** and paste into recipe field
+5. **Save recipe** and assign to VM plans
+6. **Test deployment** on development VM first
+
+## ✅ What the Recipe Accomplishes
+
+The simple 64-line recipe provides **completely automated server setup**:
+
+- 🔍 **Configuration Validation**: Prevents using placeholder values in production
+- 🌐 **Network Verification**: Ensures internet connectivity before proceeding  
+- 📥 **Script Download**: Gets latest master script from GitHub automatically
+- 🚀 **Automated Setup**: Passes your configuration and executes complete server setup
+- 📋 **Success Reporting**: Logs all operations with timestamps and status
+
+## 🔧 Simple Troubleshooting
+
+If the recipe doesn't work as expected, check these common issues:
+
+**Configuration Issue**: Recipe exits with "Must update ZABBIX_SERVER_DOMAIN"
+- **Solution**: Edit the recipe and replace `monitor.yourcompany.com` with your actual server
+
+**Network Issue**: Recipe fails with "Download failed"  
+- **Check**: Internet connectivity and GitHub access
+- **Test**: `ping 8.8.8.8` and `wget https://github.com`
+
+**Script Issue**: Setup fails after download
+- **Check logs**: `tail -f /var/log/virtualizor-recipe.log`
+- **Look for**: Specific error messages from the master script
+
+## 🎉 Why This Simple Approach Works Better
+
+✅ **Concise**: Only 64 lines vs 288+ lines in complex versions  
+✅ **Clear**: No confusing sed commands or file manipulation  
+✅ **Reliable**: Direct parameter passing is more robust than file modification  
+✅ **Maintainable**: Easy to understand and modify  
+✅ **Fast**: Fewer operations means quicker provisioning  
+✅ **Secure**: Administrator trust model with focused validation  
+
+The recipe trusts system administrators to configure values appropriately, focusing on preventing only the most obvious deployment errors (using placeholder values).
 
 1. **Access Virtualizor admin panel**
 2. **Navigate to**: Plans → Recipes → Add Recipe

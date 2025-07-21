@@ -54,9 +54,13 @@ Match User zabbixssh
     ForceCommand /bin/false
 ```
 
-Restart SSH:
+Test and restart SSH:
 
 ```bash
+# Test configuration first
+sudo sshd -t
+
+# If test passes, restart SSH
 sudo systemctl restart sshd
 ```
 

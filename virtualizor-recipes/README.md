@@ -1,33 +1,36 @@
 # Virtualizor Recipe Templates
 
-This directory contains production-ready Virtualizor recipe templates for completely **touchless server provisioning** with the `virtualizor-server-setup.sh` script.
+This directory contains production-ready Virtualizor recipe templates for **automated server provisioning** with the `virtualizor-server-setup.sh` script.
 
-## 📋 Available Recipes
+## 📋 Available Recipe
 
-### 1. **[direct-download-recipe.sh](direct-download-recipe.sh)** ⭐ RECOMMENDED
-- **Best for**: Production environments with internet access
-- **Method**: Downloads latest script from GitHub automatically
-- **Advantages**: Always current, small recipe size, easy maintenance
-- **Usage**: Copy entire content to Virtualizor recipe configuration
+### **[direct-download-recipe.sh](direct-download-recipe.sh)** ⭐ RECOMMENDED
 
-### 2. **[embedded-script-recipe.sh](embedded-script-recipe.sh)**  
-- **Best for**: Air-gapped environments or version control requirements
-- **Method**: Contains complete script embedded within recipe
-- **Advantages**: No network dependency, works offline, version control
-- **Usage**: Replace placeholder section with complete `virtualizor-server-setup.sh` content
-
-### 3. **[cloud-init-compatible-recipe.sh](cloud-init-compatible-recipe.sh)**
-- **Best for**: Cloud-init environments or delayed execution needs
-- **Method**: Uses systemd service for first-boot execution
-- **Advantages**: Network timing resilient, cloud-init compatible
-- **Usage**: Creates systemd service for automated first-boot execution
+- **Simple & Clean**: 64-line concise script for fast provisioning
+- **Method**: Downloads latest script from GitHub and passes your configuration as parameters
+- **Advantages**: Always current, small size, easy to understand and maintain
+- **Usage**: Edit configuration section, then copy entire content to Virtualizor recipe configuration
 
 ## 🚀 Quick Setup
 
-1. **Choose your recipe** based on environment needs
-2. **Copy recipe content** to Virtualizor recipe configuration
-3. **Test with single VPS** to validate execution
-4. **Deploy to production** templates once verified
+1. **Download recipe**: `wget https://raw.githubusercontent.com/virxpert/zabbix-monitor/main/virtualizor-recipes/direct-download-recipe.sh`
+2. **Edit configuration**: Update lines 13-17 with your actual server details
+3. **Upload to Virtualizor**: Copy entire script content to recipe configuration
+4. **Test deployment**: Run on a test VPS first to validate
+
+## 📝 Configuration Required
+
+**You MUST edit these values in the recipe (lines 13-17):**
+
+```bash
+ZABBIX_SERVER_DOMAIN="monitor.yourcompany.com"    # ⚠️ YOUR monitoring server
+SSH_TUNNEL_PORT="2847"                           # ⚠️ YOUR unique SSH port  
+SSH_TUNNEL_USER="zbx-tunnel-user"                # ⚠️ YOUR unique username
+ZABBIX_VERSION="6.4"                             # Zabbix version to install
+ZABBIX_SERVER_PORT="10051"                       # Zabbix server port
+```
+
+**Replace with YOUR actual values** before uploading to Virtualizor.
 
 ## 📚 Documentation
 
@@ -60,6 +63,7 @@ If a recipe fails to execute:
 ## 📞 Support
 
 For issues with recipe integration:
+
 - Check the [Troubleshooting Guide](../docs/troubleshooting-guide.md)
 - Review [Recipe Integration Guide](../docs/virtualizor-recipe-integration.md)
 - Create [GitHub Issue](https://github.com/virxpert/zabbix-monitor/issues) with recipe logs
