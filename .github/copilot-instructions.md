@@ -1,98 +1,111 @@
-# Copilot Instructions for Zabbix Monitor
+# Zabbix Scripts & Utilities - Development Guide
 
-## Project Overview
-This is a Zabbix monitoring solution project designed to provide comprehensive infrastructure monitoring capabilities. The project follows a modular architecture with clear separation between monitoring configurations, custom scripts, and data processing components.
+## **CRITICAL RULE: Always Review Before Coding**
+Before writing ANY new code, ALWAYS check existing scripts in `/scripts/` and `/docs/` to understand patterns, logging format, and error handling. Consistency prevents bugs.
 
-## Architecture & Components
+## Project Architecture
+**Self-Contained Scripts**: Each script is fully independent and executable at boot time without user login. No script dependencies or shared libraries - everything needed is embedded within each script.
 
-### Core Structure
-- **`/templates/`** - Zabbix template definitions (XML format) for different service types
-- **`/scripts/`** - Custom monitoring scripts and data collection tools
-- **`/discovery/`** - Auto-discovery scripts for dynamic host/service detection  
-- **`/dashboards/`** - Grafana dashboard configurations and Zabbix screen exports
-- **`/config/`** - Configuration files for agents, proxies, and server settings
-- **`/docs/`** - Deployment guides, troubleshooting, and API documentation
-
-### Key Patterns
-- Template naming: `zbx_template_[service]_[version].xml` 
-- Script naming: `[service]_[metric].py|sh` with standardized parameter handling
-- All scripts use `/usr/local/bin/zabbix-scripts/` prefix for absolute paths
-- Discovery scripts return JSON format following Zabbix LLD macros: `{#MACRO}`
-
-## Development Workflows
-
-### Template Development
-```bash
-# Test template import
-zabbix_cli template import templates/zbx_template_app_v1.0.xml
-# Validate template syntax
-xmllint --noout templates/*.xml
+## Project Structure
+```
+/scripts/           # Self-contained executable scripts
+  install-zabbix-agent.sh     # Complete Zabbix agent installation
+  monitor-logs.sh             # Log file monitoring with built-in parsing
+  monitor-ports.sh            # Port availability checking
+  create-secure-tunnel.sh     # SSH tunnel creation with key management
+  /tests/                     # Test scripts for validation
+/docs/              # User documentation (installation, usage guides)
+/config/            # Configuration templates and examples
+/logs/              # All script logs go here (auto-created)
 ```
 
-### Script Testing
-- All monitoring scripts must handle `-t` flag for test mode
-- Use `zabbix_sender` for testing metric submission
-- Include error handling for network timeouts and API failures
+## Mandatory Standards
 
-### Configuration Management  
-- Use `zabbix_agentd.conf.d/` directory structure for modular agent configs
-- Environment-specific settings via `${ENV}` variable substitution
-- Proxy configurations inherit from `zabbix_proxy.conf.template`
-
-## Integration Points
-
-### Zabbix API Usage
-- Authentication via `ZBX_AUTH_TOKEN` environment variable
-- Rate limiting: max 10 requests/second per API endpoint
-- Use bulk operations for items/triggers creation (items.create with array)
-
-### External Dependencies
-- **Grafana**: Dashboard sync via provisioning configs in `/dashboards/grafana/`
-- **SNMP**: MIB files stored in `/mibs/` with dependency mapping in `mib_deps.json`
-- **Database**: Custom metrics stored in `zabbix.custom_metrics` table
-
-### Data Flow
-1. Agents/Scripts → Zabbix Server → Database
-2. Templates define items → Triggers evaluate → Actions execute
-3. Historical data → Trends calculation → Dashboard visualization
-
-## Project Conventions
-
-### Monitoring Item Keys
-- Format: `[service].[metric][.parameter]`
-- Examples: `mysql.queries.per_second`, `apache.workers.idle`
-- Custom parameters use bracket notation: `log.error.count[/var/log/app.log]`
-
-### Trigger Expressions
-- Use functions: `avg()`, `last()`, `nodata()` with appropriate time periods
-- Severity mapping: 0=Not classified, 1=Information, 2=Warning, 3=Average, 4=High, 5=Disaster
-- Include recovery expressions for all problem triggers
-
-### File Organization
-- Group related templates by technology (linux/, windows/, network/, databases/)
-- Version control: use semantic versioning for templates (v1.0.0)
-- Change logs in template descriptions field
-
-## Debugging & Troubleshooting
-
-### Log Locations
-- Zabbix server: `/var/log/zabbix/zabbix_server.log`
-- Agent logs: `/var/log/zabbix/zabbix_agentd.log`
-- Custom script logs: `/var/log/zabbix-scripts/[script-name].log`
-
-### Common Issues
-- Permission errors: scripts need zabbix user execution rights
-- Timeout issues: increase `Timeout` in agent config for long-running scripts
-- Data collection gaps: check network connectivity and firewall rules
-
-### Testing Commands
+### Self-Contained Script Structure
+Every script MUST be completely independent:
 ```bash
-# Test agent connectivity
-zabbix_get -s [host] -k [item_key]
-# Test script locally  
-sudo -u zabbix /usr/local/bin/zabbix-scripts/[script].py -t
-# Validate configuration
-zabbix_agentd -t
+#!/bin/bash
+# Script: [name] - [brief description]
+# Usage: ./script.sh [options]
+# Boot-safe: Can run without user login, designed for system startup
+# Author: [name] | Date: [date]
+
+set -euo pipefail  # Exit on errors, undefined vars, pipe failures
+
+# Embedded configuration (no external config files)
+readonly SCRIPT_NAME="$(basename "$0" .sh)"
+readonly LOG_DIR="/var/log/zabbix-scripts"
+readonly LOG_FILE="${LOG_DIR}/${SCRIPT_NAME}-$(date +%Y%m%d).log"
+
+# Embedded logging functions (no external dependencies)
+log_message() {
+    local level="$1"
+    local message="$2"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
+    echo "[$timestamp] [$level] [$SCRIPT_NAME] $message" | tee -a "$LOG_FILE"
+}
+
+# All required functions embedded here...
 ```
 
-When developing new components, always consider scalability (10k+ hosts), error handling, and documentation. Follow the established patterns for consistency and maintainability.
+### Boot-Time Requirements
+- **No External Dependencies**: All functions, configs, and logic embedded in script
+- **Root Execution**: Scripts run as root during boot, handle permissions internally
+- **Network Independence**: Handle network unavailability gracefully with retries
+- **Silent Operation**: Minimal output, all details logged to files
+- **Atomic Operations**: Each script completes one full objective independently
+
+### Error Handling & Validation
+- **Embedded Validation**: All input checking built into each script
+- **Graceful Degradation**: Continue operation when non-critical components fail
+- **Retry Logic**: Network operations have built-in retry with exponential backoff
+- **Exit Codes**: 0=success, 1=general error, 2=invalid input, 3=network timeout
+- **Lock Files**: Use `/var/run/[script-name].pid` to prevent concurrent execution
+
+## Development Workflow
+
+### Before Writing Code
+1. Read existing scripts in `/scripts/` to understand the self-contained patterns
+2. Check `/docs/` for existing functionality and user expectations
+3. Review test patterns in `/tests/` for validation approaches
+4. Understand boot-time constraints and network availability issues
+
+### Creating New Scripts
+1. Single file approach: `[action-target].sh` (e.g., `install-zabbix-agent.sh`)
+2. Embed ALL required functions, configs, and logic within the script
+3. Create corresponding test in `/tests/test-[script-name].sh`
+4. Design for unattended execution during system boot
+5. Update documentation in `/docs/`
+
+### Boot-Time Testing
+- Test scripts as root without login session
+- Simulate network unavailability scenarios  
+- Validate operation during early boot stages
+- Test concurrent execution prevention (lock files)
+- Verify log file creation and permissions
+
+## User-Focused Design
+Scripts will be used by non-programmers and system administrators:
+- **Unattended Operation**: Scripts run automatically during boot without interaction
+- **Clear Configuration**: Use embedded config sections with comments for easy modification
+- **Self-Documenting**: Include usage examples within script headers
+- **Status Reporting**: Log all actions and outcomes for post-execution review
+- **Recovery Mechanisms**: Built-in rollback or recovery procedures for failed operations
+
+## Self-Contained Script Patterns
+Each script must embed these components:
+- **Configuration Block**: All settings at the top of the script
+- **Utility Functions**: Logging, validation, network checks, etc.
+- **Main Logic**: Complete functionality without external calls
+- **Cleanup Procedures**: Proper cleanup on exit or failure
+- **Status Reporting**: Success/failure indication via logs and exit codes
+
+## Documentation Structure
+Keep documentation minimal but comprehensive:
+- `README.md` - Quick start and boot integration guide
+- `/docs/installation.md` - System integration and systemd service setup
+- `/docs/usage.md` - Configuration and customization examples
+- `/docs/troubleshooting.md` - Boot-time issues and log analysis
+
+Remember: Each script is a complete, standalone solution. No dependencies, no shared state, no inter-script communication. Design for reliability in unattended, boot-time environments.
