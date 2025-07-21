@@ -6,9 +6,15 @@ The repository `https://github.com/virxpert/zabbix-monitor` returns 404 errors w
 
 ## Recent Fix: Shell Compatibility
 
-**Fixed**: Syntax error "redirection unexpected" on line 62
+**Fixed**: Multiple syntax errors resolved:
+1. **Line 62**: Process substitution `>(tee ...)` not supported in all shells  
+2. **Line 84**: Incorrect redirection `exec 2>>&1` → `exec 2>&1`
+
+**Solutions Applied:**
 - **Problem**: Process substitution `>(tee ...)` not supported in all shells  
 - **Solution**: Replaced with compatible named pipe approach
+- **Problem**: Wrong redirection syntax `exec 2>>&1`
+- **Solution**: Corrected to `exec 2>&1` (standard error to stdout)
 - **Added**: Shell compatibility check to ensure bash execution
 
 **Execution Requirements:**

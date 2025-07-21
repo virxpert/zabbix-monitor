@@ -81,12 +81,12 @@ setup_logging() {
         else
             # Fallback: direct file logging without tee
             exec 1>>"$LOG_FILE"
-            exec 2>>&1
+            exec 2>&1
         fi
     else
         # Simple fallback for systems without mkfifo
         exec 1>>"$LOG_FILE"
-        exec 2>>&1
+        exec 2>&1
     fi
 }
 
