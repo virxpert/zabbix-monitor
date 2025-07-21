@@ -6,6 +6,13 @@
 # Author: System Admin | Date: 2025-07-21
 # ====================================================================
 
+# Shell compatibility check - ensure we're running with bash
+if [ -z "$BASH_VERSION" ]; then
+    echo "ERROR: This script requires bash to run properly."
+    echo "Please execute with: bash $0"
+    exit 1
+fi
+
 set -euo pipefail  # Exit on errors, undefined vars, pipe failures
 
 # ====================================================================
@@ -59,8 +66,28 @@ readonly UPDATE_TIMEOUT=1800  # 30 minutes for updates
 # ====================================================================
 setup_logging() {
     mkdir -p "$LOG_DIR" 2>/dev/null || true
-    exec 1> >(tee -a "$LOG_FILE")
-    exec 2> >(tee -a "$LOG_FILE" >&2)
+    # Create named pipes for logging (compatible with all shells)
+    if command -v mkfifo >/dev/null 2>&1; then
+        LOG_PIPE_OUT="/tmp/${SCRIPT_NAME}_out_$$"
+        LOG_PIPE_ERR="/tmp/${SCRIPT_NAME}_err_$$"
+        mkfifo "$LOG_PIPE_OUT" "$LOG_PIPE_ERR" 2>/dev/null || true
+        if [ -p "$LOG_PIPE_OUT" ] && [ -p "$LOG_PIPE_ERR" ]; then
+            tee -a "$LOG_FILE" < "$LOG_PIPE_OUT" &
+            tee -a "$LOG_FILE" < "$LOG_PIPE_ERR" >&2 &
+            exec 1>"$LOG_PIPE_OUT"
+            exec 2>"$LOG_PIPE_ERR"
+            # Clean up pipes on exit
+            trap 'rm -f "$LOG_PIPE_OUT" "$LOG_PIPE_ERR" 2>/dev/null || true' EXIT
+        else
+            # Fallback: direct file logging without tee
+            exec 1>>"$LOG_FILE"
+            exec 2>>&1
+        fi
+    else
+        # Simple fallback for systems without mkfifo
+        exec 1>>"$LOG_FILE"
+        exec 2>>&1
+    fi
 }
 
 log_message() {
