@@ -3,6 +3,9 @@
 .env.local
 .env.production
 
+# Archive folder (contains legacy/deprecated content - DO NOT SYNC)
+archive/
+
 # SSH keys and sensitive files
 *.pem
 *.key

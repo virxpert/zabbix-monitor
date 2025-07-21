@@ -1,52 +1,107 @@
 # Virtualizor Recipe Integration Guide
 
-This guide explains how to properly integrate the `virtualizor-server-setup.sh` script into Virtualizor recipes for completely touchless server provisioning.
+This guide explains how to properly integrate the Zabbix monitoring setup into Virtualizor recipes for automated server provisioning.
 
-## Problem Analysis
+## 🔒 CRITICAL: Pre-Configuration Required
 
-The script didn't run automatically because of **Virtualizor recipe configuration issues**, not problems with the script itself. Common issues include:
+**⚠️ IMPORTANT**: Virtualizor recipes execute automatically without user interaction. **ALL configuration values MUST be set in the recipe file BEFORE uploading to Virtualizor.**
 
-- **Missing script files** - Script not uploaded to server
-- **Syntax errors** in recipe code (mismatched quotes, parentheses)
-- **Network timing** - Script runs before network is ready
-- **File permissions** - Script not executable
-- **Path issues** - Wrong file paths in recipe
+### Configuration Requirements
 
-## Solution Options
+1. **Edit recipe file** with your actual server details
+2. **Replace ALL example values** before deployment  
+3. **Test configuration** on development server first
+4. **No runtime prompts** - everything must be pre-configured
 
-### Option 1: Direct Download Recipe (Recommended)
+## 📋 Step-by-Step Integration
 
-**Best for**: Production environments with internet access
+### Step 1: Choose Your Recipe Type
+
+**Option 1: Direct Download Recipe (Recommended)**
+- Downloads latest script during provisioning
+- Requires internet access during VM creation
+- Always gets newest version
+- Smallest recipe file
+
+**Option 2: Embedded Script Recipe**  
+- Complete script embedded in recipe file
+- Works in air-gapped environments
+- Larger recipe file but no external dependencies
+
+**Option 3: Cloud-Init Compatible**
+- Uses systemd services for complex deployments
+- Best for enterprise environments
+
+### Step 2: Download and Configure Recipe
+
+**For Direct Download Method:**
 
 ```bash
-#!/bin/bash
-# Virtualizor Recipe: Direct Download Method
-set -euo pipefail
+# 1. Download the recipe
+wget https://raw.githubusercontent.com/virxpert/zabbix-monitor/main/virtualizor-recipes/direct-download-recipe.sh
 
-SCRIPT_URL="https://raw.githubusercontent.com/virxpert/zabbix-monitor/main/scripts/virtualizor-server-setup.sh"
-LOG_FILE="/var/log/virtualizor-recipe.log"
+# 2. Edit configuration section
+nano direct-download-recipe.sh
 
-# Wait for network
-for i in {1..30}; do
-    if ping -c 1 8.8.8.8 >/dev/null 2>&1; then break; fi
-    sleep 2
-done
+# 3. Update CONFIGURATION SECTION with YOUR values:
+export ZABBIX_SERVER_DOMAIN="monitor.yourcompany.com"    # ⚠️ CHANGE THIS
+export SSH_TUNNEL_PORT="2847"                           # ⚠️ CHANGE THIS
+export SSH_TUNNEL_USER="zbx-tunnel-user"                # ⚠️ CHANGE THIS
 
-# Download and execute
-wget -O /tmp/setup.sh "$SCRIPT_URL"
-chmod +x /tmp/setup.sh
-/tmp/setup.sh --banner-text "Virtualizor Managed Server - READY"
+# 4. Save file - ready for Virtualizor upload
 ```
 
-**Advantages:**
-- ✅ Always gets latest script version
-- ✅ Small recipe size
-- ✅ Easy to maintain
-- ✅ No script duplication
+### Step 3: Security Validation
 
-### Option 2: Embedded Script Recipe
+**Before uploading to Virtualizor, verify:**
 
-**Best for**: Air-gapped environments or when you want script versioning control
+```bash
+# Check for example values (THESE WILL CAUSE FAILURES):
+grep -E "(your-monitor-server\.example\.com|monitor\.cloudgeeks\.in)" your-recipe.sh
+# Should return NO results
+
+# Check for common insecure ports:  
+grep -E "(\"22\"|\"2222\"|\"20202\")" your-recipe.sh
+# Should return NO results (use unique ports)
+
+# Check for predictable usernames:
+grep -E "(\"zabbix\"|\"zabbixssh\"|\"monitoring\")" your-recipe.sh  
+# Should return NO results (use unique usernames)
+```
+
+### Step 4: Upload and Deploy in Virtualizor
+
+1. **Login to Virtualizor admin panel**
+2. **Navigate to**: Plans → Recipes → Add Recipe
+3. **Recipe Type**: Post Installation Script  
+4. **Upload your configured recipe file**
+5. **Assign to VM plans** as needed
+6. **Test deployment** on development VM first
+
+## 🔧 Recipe Configuration Examples
+
+### Minimal Configuration (Required)
+
+```bash
+# In your recipe file - CONFIGURATION SECTION
+export ZABBIX_SERVER_DOMAIN="monitor.acme.com"      # Your monitoring server
+export SSH_TUNNEL_PORT="2847"                       # Your unique SSH port
+export SSH_TUNNEL_USER="acme-zbx-user"              # Your unique username
+```
+
+### Complete Configuration (Recommended)
+
+```bash  
+# Complete configuration for production deployment
+export ZABBIX_SERVER_DOMAIN="zabbix.internal.acme.com"
+export SSH_TUNNEL_PORT="8472"                       # Non-standard port
+export SSH_TUNNEL_USER="acme-monitoring-agent"      # Company-specific username
+export ZABBIX_VERSION="6.4"                         # Specific version
+export ZABBIX_SERVER_PORT="10051"                   # Zabbix server port
+
+# Optional: Custom banner
+DEFAULT_BANNER_TEXT="ACME Corp Production Server - Monitoring Enabled"
+```
 
 1. Copy the complete content of `virtualizor-server-setup.sh`
 2. Embed it in the recipe template provided in `/virtualizor-recipes/embedded-script-recipe.sh`
