@@ -352,7 +352,7 @@ sudo journalctl -u test-service
 **Document complex logic**:
 ```bash
 # Install Zabbix repository based on detected OS
-# Supports RHEL/CentOS 8+, Ubuntu 20.04+, Debian 10+
+# Supports RHEL/CentOS/AlmaLinux/Rocky Linux 8+, Ubuntu 20.04+, Debian 10+
 install_zabbix_repo() {
     local os_type="$1"
     
@@ -360,10 +360,11 @@ install_zabbix_repo() {
     
     case "$os_type" in
         "rhel")
-            # Use RPM package for RHEL/CentOS
+            # Use RPM package for RHEL-based systems
             # Note: Version 8+ required for systemd compatibility
+            # Supports RHEL, CentOS, AlmaLinux, Rocky Linux
             rpm -Uvh "https://repo.zabbix.com/..." || {
-                log_error "Failed to install Zabbix repository for RHEL"
+                log_error "Failed to install Zabbix repository for RHEL-based systems"
                 return 1
             }
             ;;

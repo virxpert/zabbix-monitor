@@ -80,7 +80,7 @@ zabbix-monitor/
 **Purpose**: Complete Zabbix agent installation and configuration
 
 **Features**:
-- Automatic OS detection (RHEL, Ubuntu, Debian)
+- Automatic OS detection (RHEL, CentOS, AlmaLinux, Rocky Linux, Ubuntu, Debian)
 - Repository installation and package management
 - Agent configuration with custom server/hostname
 - Service startup and validation

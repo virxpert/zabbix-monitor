@@ -111,6 +111,8 @@ check_network_connectivity() {
 detect_os() {
     if [ -f /etc/redhat-release ]; then
         echo "rhel"
+    elif [ -f /etc/almalinux-release ]; then
+        echo "rhel"  # AlmaLinux uses same package management as RHEL
     elif [ -f /etc/debian_version ]; then
         echo "debian"
     elif [ -f /etc/ubuntu_release ] || grep -q "Ubuntu" /etc/os-release 2>/dev/null; then
@@ -127,8 +129,9 @@ install_zabbix_repo() {
     
     case "$os_type" in
         "rhel")
+            # Supports RHEL, CentOS, AlmaLinux, Rocky Linux
             rpm -Uvh "https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/rhel/8/x86_64/zabbix-release-${ZABBIX_VERSION}-4.el8.noarch.rpm" 2>/dev/null || {
-                log_error "Failed to install Zabbix repository for RHEL"
+                log_error "Failed to install Zabbix repository for RHEL-based systems"
                 return 1
             }
             ;;
@@ -160,6 +163,7 @@ install_zabbix_agent() {
     
     case "$os_type" in
         "rhel")
+            # Supports RHEL, CentOS, AlmaLinux, Rocky Linux
             yum install -y zabbix-agent2 >/dev/null 2>&1 || {
                 log_error "Failed to install Zabbix agent"
                 return 1
