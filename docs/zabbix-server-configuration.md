@@ -67,9 +67,10 @@ sudo chown -R zabbixssh:zabbixssh /home/zabbixssh/.ssh
 sudo nano /etc/ssh/sshd_config
 ```
 
-Add or modify these settings:
+Add or modify these settings. **Important**: Some directives cannot be inside `Match` blocks - place them in the global section:
 
 ```bash
+# === GLOBAL SECTION (before any Match blocks) ===
 # Keep standard SSH port (22) - Router NAT handles external port mapping
 Port 22
 
@@ -80,7 +81,13 @@ AllowUsers root zabbixssh
 AllowTcpForwarding yes
 GatewayPorts yes
 
-# Optional: Restrict zabbixssh user to only tunneling
+# These directives MUST be in global section (not in Match blocks)
+PrintMotd no
+Banner none
+AcceptEnv LANG LC_*
+
+# === MATCH SECTION (user-specific restrictions) ===
+# Restrict zabbixssh user to only tunneling
 Match User zabbixssh
     AllowTcpForwarding yes
     X11Forwarding no
@@ -322,26 +329,53 @@ sudo ufw status
 
 #### SSH Configuration Errors
 
-**Error: "Directive 'PrintMotd' is not allowed within a Match block"**
+**Common Error: "Directive 'PrintMotd' is not allowed within a Match block"**
 
+This happens when SSH directives that must be in the global section are placed inside `Match` blocks.
+
+**Quick Fix:**
 ```bash
-# Fix: Move PrintMotd outside the Match block or remove it
+# 1. Backup current config
+sudo cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup
+
+# 2. Edit SSH config
 sudo nano /etc/ssh/sshd_config
 
-# Find and move this line to the global section (before Match blocks):
-PrintMotd no
+# 3. Move these directives OUTSIDE and BEFORE any Match blocks:
+#    PrintMotd, Banner, AcceptEnv, AuthorizedKeysFile, etc.
 
-# Or remove PrintMotd entirely from within the Match User block
-# Keep only these directives in the Match block:
+# 4. Your config should look like this:
+```
+
+**Correct SSH Configuration Structure:**
+```bash
+# === GLOBAL SECTION (top of file, before Match blocks) ===
+Port 22
+AllowUsers root zabbixssh
+AllowTcpForwarding yes
+GatewayPorts yes
+PrintMotd no
+Banner none
+AcceptEnv LANG LC_*
+
+# === MATCH SECTIONS (bottom of file) ===
 Match User zabbixssh
     AllowTcpForwarding yes
-    X11Forwarding no
+    X11Forwarding no  
     AllowAgentForwarding no
     ForceCommand /bin/false
+```
 
-# Always test configuration before restarting:
+**Always test before restarting:**
+```bash
+# Test configuration
 sudo sshd -t
+
+# If test passes, restart SSH
 sudo systemctl restart sshd
+
+# If test fails, restore backup
+sudo cp /etc/ssh/sshd_config.backup /etc/ssh/sshd_config
 ```
 
 #### Zabbix Server Not Receiving Data
