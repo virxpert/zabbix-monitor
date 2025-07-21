@@ -528,6 +528,46 @@ stage_tunnel_setup() {
 stage_complete() {
     log_stage "STAGE: COMPLETE - Finalizing server setup"
     
+    # Display SSH key information prominently if key exists
+    if [ -f "$DEFAULT_SSH_KEY.pub" ]; then
+        echo ""
+        echo "=========================================================================="
+        echo "                    🔑 SSH TUNNEL CONFIGURATION REQUIRED"
+        echo "=========================================================================="
+        echo "The server setup is complete, but the SSH tunnel requires manual setup."
+        echo ""
+        echo "ADMINISTRATOR: Add this SSH public key to your Zabbix server:"
+        echo "--------------------------------------------------------------------------"
+        cat "$DEFAULT_SSH_KEY.pub"
+        echo "--------------------------------------------------------------------------"
+        echo ""
+        echo "Key files available at:"
+        echo "  📄 Full instructions: /root/zabbix_ssh_key_info.txt"
+        echo "  🔑 Public key only:   /root/zabbix_tunnel_public_key.txt"
+        echo ""
+        echo "After adding the key to your Zabbix server:"
+        echo "  systemctl start zabbix-tunnel"
+        echo "=========================================================================="
+        echo ""
+        
+        # Log the key information for permanent record
+        log_warn "========== SSH TUNNEL SETUP REQUIRED =========="
+        log_warn "SSH public key: $(cat "$DEFAULT_SSH_KEY.pub")"
+        log_warn "Instructions saved to: /root/zabbix_ssh_key_info.txt"
+        log_warn "==============================================="
+    fi
+    
+    # Create enhanced MOTD with SSH key reference
+    local ssh_key_status="Not configured"
+    local ssh_key_instructions=""
+    
+    if [ -f "$DEFAULT_SSH_KEY.pub" ]; then
+        ssh_key_status="Generated - Manual setup required"
+        ssh_key_instructions="
+   SSH Key Setup: cat /root/zabbix_ssh_key_info.txt
+   Start Tunnel:  systemctl start zabbix-tunnel"
+    fi
+    
     # Final banner update
     cat > /etc/motd << EOF
 
@@ -541,7 +581,7 @@ stage_complete() {
    
    Status: Server Ready for Use
    Zabbix Agent: Configured and Running
-   SSH Tunnel: Check logs for status
+   SSH Tunnel: $ssh_key_status$ssh_key_instructions
 ===============================================
 
 EOF
@@ -554,6 +594,11 @@ EOF
     
     log_info "Server setup completed successfully"
     log_info "Zabbix agent is configured and running"
+    
+    if [ -f "$DEFAULT_SSH_KEY.pub" ]; then
+        log_info "SSH tunnel requires manual key setup - see /root/zabbix_ssh_key_info.txt"
+    fi
+    
     log_info "Server is ready for user access"
     
     return 0
@@ -633,9 +678,55 @@ generate_tunnel_ssh_key() {
         chmod 644 "${ssh_key}.pub"
         
         log_info "SSH key generated: $ssh_key"
-        log_warn "MANUAL ACTION REQUIRED:"
-        log_warn "Copy the following public key to the remote server:"
+        
+        # Save public key to easily accessible location
+        cp "${ssh_key}.pub" "/root/zabbix_tunnel_public_key.txt"
+        chmod 644 "/root/zabbix_tunnel_public_key.txt"
+        
+        # Create admin-readable summary file
+        cat > "/root/zabbix_ssh_key_info.txt" << EOF
+========================================
+ZABBIX SSH TUNNEL CONFIGURATION
+========================================
+Generated: $(date '+%Y-%m-%d %H:%M:%S')
+Hostname: $(hostname)
+Server IP: $(hostname -I | awk '{print $1}')
+
+ADMINISTRATOR ACTION REQUIRED:
+1. Copy the SSH public key below to your Zabbix server
+2. Add it to the zabbixssh user's authorized_keys
+3. Restart the tunnel service: systemctl start zabbix-tunnel
+
+SSH PUBLIC KEY (copy this entire line):
+$(cat "${ssh_key}.pub")
+
+Files created:
+- Private key: $ssh_key
+- Public key: ${ssh_key}.pub
+- This info: /root/zabbix_ssh_key_info.txt
+- Public key copy: /root/zabbix_tunnel_public_key.txt
+
+Quick access commands:
+- View this info: cat /root/zabbix_ssh_key_info.txt
+- Copy public key: cat /root/zabbix_tunnel_public_key.txt
+- Check tunnel status: systemctl status zabbix-tunnel
+========================================
+EOF
+        
+        log_warn ""
+        log_warn "==================== ADMINISTRATOR ACTION REQUIRED ===================="
+        log_warn "SSH KEY GENERATED - MUST BE ADDED TO ZABBIX SERVER"
+        log_warn "========================================================================"
+        log_warn "Public key saved to: /root/zabbix_tunnel_public_key.txt"
+        log_warn "Complete instructions: /root/zabbix_ssh_key_info.txt"
+        log_warn ""
+        log_warn "COPY THIS SSH PUBLIC KEY TO YOUR ZABBIX SERVER:"
         cat "${ssh_key}.pub"
+        log_warn ""
+        log_warn "After adding the key to your Zabbix server:"
+        log_warn "systemctl start zabbix-tunnel"
+        log_warn "========================================================================"
+        
         return 0
     else
         return 1
@@ -772,6 +863,13 @@ validate_system_status() {
         log_info "   1. Check service logs: journalctl -u zabbix-agent -u zabbix-tunnel"
         log_info "   2. Test SSH connection: ssh -i $DEFAULT_SSH_KEY -p $DEFAULT_HOME_SERVER_SSH_PORT $DEFAULT_SSH_USER@$DEFAULT_HOME_SERVER_IP"
         log_info "   3. Restart services: systemctl restart zabbix-agent zabbix-tunnel"
+        
+        # SSH Key Information for troubleshooting
+        if [ -f "$DEFAULT_SSH_KEY.pub" ]; then
+            log_info "   4. SSH Key Setup: cat /root/zabbix_ssh_key_info.txt"
+            log_info "   5. Public Key: cat /root/zabbix_tunnel_public_key.txt"
+        fi
+        
         return 1
     fi
 }
@@ -799,6 +897,26 @@ show_quick_status() {
     else
         echo "SSH Tunnel:       ❌ STOPPED"
     fi
+    
+    # SSH Key Status and Information
+    if [ -f "$DEFAULT_SSH_KEY.pub" ]; then
+        echo "SSH Key:          ✅ GENERATED"
+        echo "Key Files:"
+        echo "  - Instructions:  /root/zabbix_ssh_key_info.txt"
+        echo "  - Public Key:    /root/zabbix_tunnel_public_key.txt"
+        echo ""
+        echo "🔑 To view SSH public key for Zabbix server setup:"
+        echo "   cat /root/zabbix_tunnel_public_key.txt"
+        echo ""
+        if ! systemctl is-active zabbix-tunnel >/dev/null 2>&1; then
+            echo "⚠️  SSH tunnel not running - key may need to be added to Zabbix server"
+            echo "   After adding key: systemctl start zabbix-tunnel"
+        fi
+    else
+        echo "SSH Key:          ❌ NOT GENERATED"
+    fi
+    
+    echo ""
     
     # Setup Status
     if load_state && [ "$CURRENT_STAGE" = "$STAGE_COMPLETE" ]; then
