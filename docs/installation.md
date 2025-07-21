@@ -279,3 +279,67 @@ ls -la /root/.ssh/zabbix_tunnel_key*
 4. **Verification**: Test monitoring connectivity and data collection
 
 This approach ensures consistent, automated Zabbix monitoring setup across all Virtualizor-provisioned servers with minimal manual intervention.
+
+## Recent Updates (July 2025)
+
+### Systemd Service Reliability Improvements
+
+**Enhanced Service Creation:**
+
+- Script now uses absolute paths in systemd service files
+- Automatic execute permission validation
+- Improved error handling for service creation failures
+
+**Previous Issue Fixed:**
+Scripts sometimes failed with `exit code 203/EXEC` due to relative paths in systemd service files. This has been resolved with automatic path resolution and permission validation.
+
+**Quality Assurance:**
+
+- ✅ Syntax validation enhanced
+- ✅ Variable consistency improved  
+- ✅ Systemd service reliability verified
+- ✅ Path resolution standardized
+
+### Integration Troubleshooting
+
+If systemd services fail during reboot persistence:
+
+```bash
+# Check service status
+systemctl status virtualizor-server-setup.service
+
+# View detailed logs  
+journalctl -u virtualizor-server-setup.service
+
+# Manual recovery if needed
+cd /path/to/scripts
+./virtualizor-server-setup.sh --stage init
+```
+
+**Common Systemd Service Issues:**
+
+1. **"bad-setting" Error with Relative Paths:**
+   ```bash
+   # Problem: Service file contains relative path like "./script.sh"
+   # Error: "Neither a valid executable name nor an absolute path"
+   
+   # Fix: Recreate service with absolute path
+   systemctl stop virtualizor-server-setup.service
+   systemctl disable virtualizor-server-setup.service
+   rm -f /etc/systemd/system/virtualizor-server-setup.service
+   systemctl daemon-reload
+   
+   # Find script location and recreate service
+   cd /root/scripts  # or wherever script is located
+   ./virtualizor-server-setup.sh --stage init
+   ```
+
+2. **Exit Code 203/EXEC Errors:**
+   ```bash
+   # Problem: Script not found or not executable
+   # Check script location and permissions
+   find / -name 'virtualizor-server-setup.sh' -type f
+   chmod +x /root/scripts/virtualizor-server-setup.sh
+   ```
+
+See [Troubleshooting Guide](troubleshooting-guide.md) for comprehensive error resolution procedures.

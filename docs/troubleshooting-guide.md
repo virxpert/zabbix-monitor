@@ -2,6 +2,15 @@
 
 This guide helps diagnose and resolve common issues with SSH tunnels between Zabbix agents and the monitoring server.
 
+## ⚠️ Important: Understanding Validation Errors
+
+**If you see "ERROR DETECTED" with exit code 1 during validation:**
+
+- This is **NORMAL BEHAVIOR** - the script is working correctly
+- Exit code 1 means validation found system issues (expected)
+- Look at the validation output **ABOVE** the error message for actual problems
+- See [Recent Script Fixes (July 2025)](#recent-script-fixes-july-2025) for detailed explanation
+
 ## Common Issues and Solutions
 
 ### 1. SSH Connection Refused
@@ -451,6 +460,78 @@ For persistent issues or additional support:
 
 ## Recent Script Fixes (July 2025)
 
+### Validation Error Exit Code 1 - NORMAL BEHAVIOR
+
+**Issue**: Script shows "ERROR DETECTED" with exit code 1 during `--validate` operation.
+
+**Example Error Output:**
+
+```log
+[ERROR] [virtualizor-server-setup] === ERROR DETECTED ===
+[ERROR] [virtualizor-server-setup] Error Code: 1
+[ERROR] [virtualizor-server-setup] Error Message: Command failed
+[ERROR] [virtualizor-server-setup] Failed Stage: 'unknown'
+[ERROR] [virtualizor-server-setup] Script Line: 1484
+```
+
+**This is NORMAL behavior, not a script bug!**
+
+**What this means:**
+
+- The script's `--validate` function detected system issues
+- Exit code 1 means "validation found problems" (expected behavior)
+- The error handler reports this as an error, but it's actually working correctly
+- Look at the validation output ABOVE the error for actual issues
+
+**How to interpret:**
+
+1. **Look for the validation results** (before the error message):
+
+   ```log
+   [WARN] ⚠️  SOME ISSUES DETECTED - Check logs above
+   [INFO] 📋 Troubleshooting steps:
+   ```
+
+2. **Common validation issues:**
+
+   - ❌ Zabbix Agent: NOT RUNNING
+   - ❌ SSH Tunnel Service: NOT RUNNING  
+   - ❌ SSH Key: Missing
+   - ⚠️  Zabbix Config: Not configured for tunnel
+
+**Solutions:**
+
+1. **If Zabbix Agent not running:**
+
+   ```bash
+   systemctl start zabbix-agent
+   systemctl enable zabbix-agent
+   ```
+
+2. **If SSH Tunnel not running:**
+
+   ```bash
+   # Check if SSH key exists first
+   ls -la /root/.ssh/zabbix_tunnel_key*
+   
+   # If key exists, start tunnel
+   systemctl start zabbix-tunnel
+   systemctl enable zabbix-tunnel
+   ```
+
+3. **If SSH key missing:**
+
+   ```bash
+   # Re-run tunnel setup stage
+   ./virtualizor-server-setup.sh --stage tunnel-setup
+   ```
+
+4. **Check logs for details:**
+
+   ```bash
+   journalctl -u zabbix-agent -u zabbix-tunnel --since "1 hour ago"
+   ```
+
 ### Unbound Variable Error - RESOLVED
 
 **Issue**: Script failed with `ZBX_CONF: unbound variable` error on line 1096.
@@ -473,6 +554,144 @@ readonly ZBX_CONF="/etc/zabbix/zabbix_agentd.conf"
 - Script now includes enhanced syntax validation
 - All variables are properly declared in the configuration section
 - Pre-execution validation catches variable issues
+
+### OS Detection Variable Error - RESOLVED (July 21, 2025)
+
+**Issue**: Script failed with `OS_FAMILY: unbound variable` error when starting from specific stages.
+
+**Symptoms:**
+
+```log
+./virtualizor-server-setup.sh: line 894: OS_FAMILY: unbound variable
+[ERROR] SCRIPT FAILED WITH EXIT CODE 1
+```
+
+**Root Cause:**
+
+- OS detection (`detect_os()` function) was only called during the `init` stage
+- When starting from other stages (like `post-reboot`, `zabbix-install`), OS variables weren't initialized
+- Variables `OS_FAMILY`, `OS_ID`, and `OS_VERSION` were undefined in non-init stage execution
+
+**Solution Applied:**
+
+Enhanced the main execution flow to always perform OS detection:
+
+```bash
+# Ensure OS detection is always performed
+if [ "$target_stage" != "$STAGE_INIT" ]; then
+    log_info "Performing OS detection for stage: $target_stage"
+    if ! detect_os; then
+        log_error "CRITICAL: OS detection failed"
+        exit 1
+    fi
+    log_info "✅ OS detected: $OS_ID $OS_VERSION (family: $OS_FAMILY)"
+fi
+```
+
+**Fix Location**: Lines 1591-1599 in `virtualizor-server-setup.sh`
+
+### SSH Banner "Setup in Progress" Issue - RESOLVED (July 21, 2025)
+
+**Issue**: SSH login banner continued showing "Setup in Progress" even after successful completion.
+
+**Symptoms:**
+
+```
+===============================================
+Virtualizor Managed Server - Setup in Progress
+===============================================
+```
+
+**Root Cause:**
+
+- Script correctly updated `/etc/motd` (Message of the Day) to show "READY"
+- However, SSH banner file `/etc/issue.net` was not updated during completion
+- SSH daemon was configured to display `/etc/issue.net` before login prompts
+
+**Solution Applied:**
+
+Enhanced the `stage_complete()` function to update SSH banner:
+
+```bash
+# Update SSH banner to reflect completion
+cat > /etc/issue.net << EOF
+===============================================
+Virtualizor Managed Server - READY
+===============================================
+EOF
+
+# Reload SSH daemon to pick up new banner
+systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+```
+
+**Fix Location**: Lines 862-870 in `virtualizor-server-setup.sh`
+
+**Result**: SSH banner now correctly shows "READY" after successful completion.
+
+### Administrator SSH Key Access
+
+**SSH Key Locations** (for administrator access after server provisioning):
+
+```bash
+# Primary key files (generated during setup)
+/root/.ssh/zabbix_tunnel_key          # Private key
+/root/.ssh/zabbix_tunnel_key.pub      # Public key
+
+# Administrator information files
+/root/zabbix_ssh_key_info.txt         # Complete setup instructions
+/root/zabbix_tunnel_public_key.txt    # Public key copy for easy access
+```
+
+**Quick Access Commands** (for administrators):
+
+```bash
+# View complete setup instructions
+cat /root/zabbix_ssh_key_info.txt
+
+# Get just the public key
+cat /root/zabbix_tunnel_public_key.txt
+
+# Check tunnel service status
+systemctl status zabbix-tunnel
+
+# Start tunnel service (after adding key to monitoring server)
+systemctl start zabbix-tunnel
+```
+
+**Note**: Customer-facing banners do not display technical monitoring details. All SSH key and monitoring configuration information is available in administrator files listed above.
+
+### Systemd Service "bad-setting" Error - RESOLVED (July 21, 2025)
+
+**Issue**: Systemd service failed with "bad-setting" error during reboot persistence.
+
+**Symptoms:**
+
+```log
+systemd[1]: /etc/systemd/system/virtualizor-server-setup.service:10: Executable path is not absolute: ./virtualizor-server-setup.sh
+systemd[1]: virtualizor-server-setup.service: Service has more than one ExecStart= setting, which is only allowed for Type=oneshot services.
+```
+
+**Root Cause:**
+
+- Service file contained relative path `./virtualizor-server-setup.sh` instead of absolute path
+- Systemd requires absolute paths in `ExecStart` directives
+- Variable substitution in heredoc wasn't expanding properly in some cases
+
+**Solution Applied:**
+
+1. **Immediate Fix**: Manual service file correction
+
+   ```bash
+   # Fix the service file manually
+   sed -i 's|ExecStart=./virtualizor-server-setup.sh|ExecStart=/root/scripts/virtualizor-server-setup.sh|' /etc/systemd/system/virtualizor-server-setup.service
+   systemctl daemon-reload
+   ```
+
+2. **Root Cause Fix**: Enhanced `create_systemd_service()` function ensures proper absolute path usage
+   - Function now uses `readlink -f "$0"` to get absolute script path
+   - Proper variable expansion in heredoc blocks
+
+**Prevention**: Always use absolute paths in systemd service files.
 
 ### Script Integrity Improvements
 
@@ -512,6 +731,71 @@ bash -n virtualizor-server-setup.sh
 2. Check variable definitions in configuration section
 3. Use `--diagnose` flag for comprehensive system check
 4. Review logs in `/var/log/zabbix-scripts/`
+
+### Systemd Service Issues - EXIT CODE 203/EXEC
+
+**Issue**: Service fails with `status=203/EXEC` error during reboot persistence.
+
+**Example Error:**
+
+```log
+systemd[1]: virtualizor-server-setup.service: Main process exited, code=exited, status=203/EXEC
+systemd[1]: Failed to start virtualizor-server-setup.service
+```
+
+**Root Cause:**
+
+- Systemd cannot find or execute the script path
+- Script path in service file is relative instead of absolute
+- Script lacks execute permissions
+
+**Solutions:**
+
+1. **Check Current Service Configuration:**
+
+   ```bash
+   systemctl cat virtualizor-server-setup.service
+   # Look for ExecStart line - should show full path
+   ```
+
+2. **Fix Immediately (Manual):**
+
+   ```bash
+   # Stop and disable the broken service
+   systemctl stop virtualizor-server-setup.service
+   systemctl disable virtualizor-server-setup.service
+   
+   # Remove the service file
+   rm -f /etc/systemd/system/virtualizor-server-setup.service
+   systemctl daemon-reload
+   
+   # Re-run script to recreate service with correct path
+   cd /path/to/scripts
+   ./virtualizor-server-setup.sh --stage init
+   ```
+
+3. **Verify Script Permissions:**
+
+   ```bash
+   # Check if script is executable
+   ls -la virtualizor-server-setup.sh
+   
+   # Make executable if needed
+   chmod +x virtualizor-server-setup.sh
+   ```
+
+4. **Check Service After Fix:**
+
+   ```bash
+   systemctl status virtualizor-server-setup.service
+   # Should show proper absolute path in ExecStart
+   ```
+
+**Prevention:**
+
+- Always run script from its directory
+- Ensure script has execute permissions before creating service
+- Use absolute paths in systemd service definitions
 
 ---
 

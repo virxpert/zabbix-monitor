@@ -138,6 +138,13 @@ grep -r "docs/" README.md | grep -o 'docs/[^)]*' | sort -u
 
 **Ready for Use**: ✅ Repository is production-ready for Virtualizor deployments
 
+**Recent Updates (July 21, 2025)**:
+- ✅ Fixed systemd "bad-setting" error with absolute paths
+- ✅ Resolved OS detection variable issues for all stages  
+- ✅ Fixed SSH banner persistence showing "READY" after completion
+- ✅ Enhanced error handling and documentation
+- ✅ Updated troubleshooting guide with new fixes
+
 **Next Steps**: 
 1. Deploy to Virtualizor recipes
 2. Test SSH key collection workflow

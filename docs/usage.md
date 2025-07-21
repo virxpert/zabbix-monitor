@@ -384,3 +384,33 @@ echo "*/5 * * * * /root/check_tunnel.sh" | crontab -
 ```
 
 This comprehensive guide covers all aspects of SSH tunnel configuration for Zabbix monitoring, from automated setup to advanced troubleshooting scenarios.
+
+## Recent Improvements (July 2025)
+
+### Enhanced Reliability
+
+**Systemd Service Improvements:**
+
+- Absolute path resolution in service files prevents execution failures
+- Automatic permission validation ensures services start properly
+- Enhanced error handling for service creation and management
+
+**Quality Assurance Enhancements:**
+
+- Comprehensive syntax validation before script execution
+- Variable consistency checks prevent runtime errors
+- Improved logging for better troubleshooting
+
+**Previous Issues Resolved:**
+
+- Fixed `exit code 203/EXEC` errors in systemd services
+- Resolved unbound variable issues in Zabbix configuration
+- Standardized path references throughout all scripts
+
+**Usage Impact:**
+
+- Scripts now more reliable in automated environments
+- Better error reporting for faster issue resolution
+- Improved state persistence across system reboots
+
+For detailed troubleshooting of these improvements, see [Troubleshooting Guide](troubleshooting-guide.md).

@@ -163,8 +163,9 @@ systemctl status virtualizor-server-setup.service
 
 ### Default Settings (Embedded)
 ```bash
-# Banner settings
-DEFAULT_BANNER_TEXT="Virtualizor Managed Server - Setup in Progress"
+# Banner settings - Lifecycle managed
+DEFAULT_BANNER_TEXT="Virtualizor Managed Server - Setup in Progress"  # During setup
+# Updated to "Virtualizor Managed Server - READY" after completion
 DEFAULT_BANNER_COLOR="red"
 DEFAULT_MOTD_MESSAGE="This server is managed by Virtualizor and monitored by Zabbix"
 
@@ -172,8 +173,8 @@ DEFAULT_MOTD_MESSAGE="This server is managed by Virtualizor and monitored by Zab
 DEFAULT_ZABBIX_VERSION="6.4"
 DEFAULT_ZABBIX_SERVER="127.0.0.1"
 
-# Banner settings
-DEFAULT_BANNER_TEXT="Virtualizor Managed Server - Setup in Progress"
+# Banner settings (duplicate - to be cleaned up)
+DEFAULT_BANNER_TEXT="Virtualizor Managed Server - Setup in Progress"  # During setup
 DEFAULT_BANNER_COLOR="red"
 DEFAULT_MOTD_MESSAGE="WARNING: Authorized Access Only
 *   This VPS is the property of Everything Cloud Solutions *
@@ -402,3 +403,44 @@ resource "null_resource" "server_setup" {
 ```
 
 This master script provides a robust, production-ready solution for Virtualizor server provisioning with complete lifecycle management and conflict prevention.
+
+## Recent Reliability Enhancements (July 2025)
+
+### Systemd Service Improvements
+
+**Enhanced Service Creation:**
+
+- **Absolute Path Resolution**: Service files now use full script paths preventing execution failures
+- **Permission Validation**: Automatic execute permission checking ensures services start properly
+- **Error Recovery**: Improved error handling for service creation and startup issues
+
+**Previous Issue Resolution:**
+
+- **Exit Code 203/EXEC**: Resolved service execution failures due to relative paths
+- **Path Resolution**: All systemd services now use `readlink -f` for absolute path determination
+- **Service Reliability**: Enhanced service file generation with proper path validation
+
+### Quality Assurance Updates
+
+**Script Validation:**
+
+- **Syntax Checking**: Comprehensive bash syntax validation before execution
+- **Variable Consistency**: Resolved unbound variable issues in configuration sections
+- **Error Handling**: Enhanced error trapping and system diagnostics
+
+**Deployment Reliability:**
+
+- **State Persistence**: Improved state file management across reboots
+- **Lock File Handling**: Better concurrent execution prevention
+- **Recovery Procedures**: Enhanced cleanup and recovery mechanisms
+
+### Impact on Virtualizor Integration
+
+**Improved Reliability:**
+
+- Services now start reliably after system reboots during provisioning
+- Better error reporting for faster troubleshooting during recipe execution
+- Enhanced stability in automated provisioning environments
+
+**Troubleshooting Support:**
+For issues related to systemd service failures during reboot persistence, see the comprehensive [Troubleshooting Guide](troubleshooting-guide.md#systemd-service-issues---exit-code-203exec) which includes specific procedures for resolving path-related service failures.

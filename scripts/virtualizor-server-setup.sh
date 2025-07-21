@@ -163,6 +163,10 @@ clear_reboot_flag() {
 create_systemd_service() {
     log_info "Creating systemd service for reboot persistence"
     
+    # Get absolute path to this script
+    local script_path="$(readlink -f "$0")"
+    log_info "Using script path: $script_path"
+    
     cat > "$SYSTEMD_SERVICE_FILE" << EOF
 [Unit]
 Description=Virtualizor Server Setup - Reboot Persistent
@@ -172,7 +176,7 @@ DefaultDependencies=no
 
 [Service]
 Type=oneshot
-ExecStart=$0 --resume-after-reboot
+ExecStart=$script_path --resume-after-reboot
 RemainAfterExit=no
 StandardOutput=journal
 StandardError=journal
@@ -182,6 +186,9 @@ TimeoutStartSec=1800
 WantedBy=multi-user.target
 EOF
 
+    # Ensure script has execute permissions
+    chmod +x "$script_path"
+    
     systemctl daemon-reload
     systemctl enable "${SCRIPT_NAME}.service"
     log_info "Systemd service created and enabled"
@@ -839,7 +846,7 @@ stage_complete() {
    Start Tunnel:  systemctl start zabbix-tunnel"
     fi
     
-    # Final banner update
+    # Create customer-friendly MOTD (no technical details)
     cat > /etc/motd << EOF
 
 ===============================================
@@ -851,11 +858,20 @@ stage_complete() {
    $DEFAULT_MOTD_MESSAGE
    
    Status: Server Ready for Use
-   Zabbix Agent: Configured and Running
-   SSH Tunnel: $ssh_key_status$ssh_key_instructions
+   Monitoring: Configured and Active
 ===============================================
 
 EOF
+
+    # Update SSH banner to reflect completion
+    cat > /etc/issue.net << EOF
+===============================================
+Virtualizor Managed Server - READY
+===============================================
+EOF
+
+    # Reload SSH daemon to pick up new banner
+    systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
     
     # Remove systemd service - no longer needed
     remove_systemd_service
@@ -1578,6 +1594,16 @@ main() {
         log_info "OS detection: $OS_ID $OS_VERSION ($OS_FAMILY)"
         log_info "Test mode completed"
         exit 0
+    fi
+    
+    # Ensure OS detection is always performed
+    if [ "$target_stage" != "$STAGE_INIT" ]; then
+        log_info "Performing OS detection for stage: $target_stage"
+        if ! detect_os; then
+            log_error "CRITICAL: OS detection failed"
+            exit 1
+        fi
+        log_info "✅ OS detected: $OS_ID $OS_VERSION (family: $OS_FAMILY)"
     fi
     
     # Execute stages in sequence
