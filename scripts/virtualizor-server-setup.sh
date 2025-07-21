@@ -621,6 +621,11 @@ stage_updates() {
     
     case "$OS_FAMILY" in
         debian)
+            # Configure dpkg for unattended operation with automatic config file handling
+            export DEBIAN_FRONTEND=noninteractive
+            export DEBIAN_PRIORITY=critical
+            export DEBCONF_NONINTERACTIVE_SEEN=true
+            
             log_info "Updating package lists"
             if ! timeout $UPDATE_TIMEOUT apt-get update -qq; then
                 log_error "Package list update failed or timed out"
@@ -633,14 +638,15 @@ stage_updates() {
                 log_info "Found $upgrades packages to upgrade"
                 update_required=true
                 
-                log_info "Installing system updates"
-                if ! timeout $UPDATE_TIMEOUT env DEBIAN_FRONTEND=noninteractive apt-get upgrade -y; then
+                log_info "Installing system updates (keeping existing config files)"
+                # Use dpkg options to automatically handle configuration file conflicts
+                if ! timeout $UPDATE_TIMEOUT apt-get upgrade -y -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-confdef"; then
                     log_error "System upgrade failed or timed out"
                     return 1
                 fi
                 
-                log_info "Installing security updates"
-                if ! timeout $UPDATE_TIMEOUT env DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y; then
+                log_info "Installing security updates (keeping existing config files)"
+                if ! timeout $UPDATE_TIMEOUT apt-get dist-upgrade -y -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-confdef"; then
                     log_warn "Security upgrade failed or timed out, continuing"
                 fi
             fi
@@ -905,9 +911,9 @@ install_zabbix_agent() {
             local repo_url="https://repo.zabbix.com/zabbix/${zabbix_version}/ubuntu/pool/main/z/zabbix-release/zabbix-release_${zabbix_version}-1+ubuntu${OS_VERSION}_all.deb"
             
             wget -q "$repo_url" -O /tmp/zabbix-release.deb || return 1
-            dpkg -i /tmp/zabbix-release.deb || return 1
+            dpkg -i --force-confold --force-confdef /tmp/zabbix-release.deb || return 1
             apt-get update -qq || return 1
-            DEBIAN_FRONTEND=noninteractive apt-get install -y zabbix-agent || return 1
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-confdef" zabbix-agent || return 1
             rm -f /tmp/zabbix-release.deb
             ;;
             
