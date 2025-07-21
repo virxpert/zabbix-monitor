@@ -626,6 +626,16 @@ stage_updates() {
             export DEBIAN_PRIORITY=critical
             export DEBCONF_NONINTERACTIVE_SEEN=true
             
+            # Optimize for faster kernel operations
+            export INITRD=no  # Skip initramfs update during package installation
+            
+            # Create temporary dpkg configuration for faster processing
+            cat > /etc/dpkg/dpkg.cfg.d/01_virtualizor << 'EOF'
+# Speed up package operations
+force-unsafe-io
+no-debsig
+EOF
+            
             log_info "Updating package lists"
             if ! timeout $UPDATE_TIMEOUT apt-get update -qq; then
                 log_error "Package list update failed or timed out"
@@ -634,20 +644,59 @@ stage_updates() {
             
             log_info "Checking for available upgrades"
             local upgrades=$(apt list --upgradable 2>/dev/null | grep -c upgradable || echo "0")
+            local kernel_updates=$(apt list --upgradable 2>/dev/null | grep -c linux-image || echo "0")
+            
             if [ "$upgrades" -gt 0 ]; then
                 log_info "Found $upgrades packages to upgrade"
+                if [ "$kernel_updates" -gt 0 ]; then
+                    log_info "Kernel updates detected - this may take longer than usual"
+                fi
                 update_required=true
                 
-                log_info "Installing system updates (keeping existing config files)"
+                log_info "Installing system updates (keeping existing config files) - This may take up to 30 minutes..."
                 # Use dpkg options to automatically handle configuration file conflicts
-                if ! timeout $UPDATE_TIMEOUT apt-get upgrade -y -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-confdef"; then
+                # Add progress monitoring for long-running operations
+                {
+                    timeout $UPDATE_TIMEOUT apt-get upgrade -y \
+                        -o Dpkg::Options::="--force-confold" \
+                        -o Dpkg::Options::="--force-confdef" \
+                        -o Dpkg::Use-Pty=0 \
+                        -o Apt::Color=0 &
+                    local apt_pid=$!
+                    
+                    # Monitor progress every 60 seconds
+                    local elapsed=0
+                    while kill -0 $apt_pid 2>/dev/null; do
+                        sleep 60
+                        elapsed=$((elapsed + 60))
+                        if [ $((elapsed % 300)) -eq 0 ]; then  # Every 5 minutes
+                            log_info "Update still in progress... (${elapsed}s elapsed)"
+                        fi
+                    done
+                    wait $apt_pid
+                } || {
                     log_error "System upgrade failed or timed out"
                     return 1
-                fi
+                }
                 
                 log_info "Installing security updates (keeping existing config files)"
-                if ! timeout $UPDATE_TIMEOUT apt-get dist-upgrade -y -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-confdef"; then
+                if ! timeout $UPDATE_TIMEOUT apt-get dist-upgrade -y \
+                        -o Dpkg::Options::="--force-confold" \
+                        -o Dpkg::Options::="--force-confdef" \
+                        -o Dpkg::Use-Pty=0 \
+                        -o Apt::Color=0; then
                     log_warn "Security upgrade failed or timed out, continuing"
+                fi
+                
+                # Clean up temporary configuration
+                rm -f /etc/dpkg/dpkg.cfg.d/01_virtualizor
+                
+                # Handle initramfs updates if kernel was upgraded
+                if [ "$kernel_updates" -gt 0 ]; then
+                    log_info "Updating initramfs for new kernel (this may take several minutes)..."
+                    update-initramfs -u -k all || log_warn "initramfs update failed, but continuing"
+                    log_info "Updating GRUB configuration..."
+                    update-grub || log_warn "GRUB update failed, but continuing"
                 fi
             fi
             ;;
