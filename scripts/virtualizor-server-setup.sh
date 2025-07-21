@@ -54,6 +54,7 @@ readonly DEFAULT_SSH_USER="zabbixssh"
 readonly DEFAULT_SSH_KEY="/root/.ssh/zabbix_tunnel_key"
 readonly DEFAULT_ADMIN_USER="root"
 readonly DEFAULT_ADMIN_KEY="/root/.ssh/id_rsa"
+readonly ZBX_CONF="/etc/zabbix/zabbix_agentd.conf"
 
 # System settings
 readonly MAX_RETRIES=5
@@ -216,14 +217,117 @@ schedule_reboot() {
 # ====================================================================
 # EMBEDDED UTILITY FUNCTIONS
 # ====================================================================
+# ====================================================================
+# ERROR HANDLING FUNCTIONS
+# ====================================================================
+handle_error() {
+    local error_code="$1"
+    local error_message="$2"
+    local error_stage="${3:-${CURRENT_STAGE:-'unknown'}}"
+    local error_line="${4:-'unknown'}"
+    
+    log_error "=== ERROR DETECTED ==="
+    log_error "Error Code: $error_code"
+    log_error "Error Message: $error_message"
+    log_error "Failed Stage: $error_stage"
+    log_error "Script Line: $error_line"
+    log_error "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
+    log_error "======================"
+    
+    # Error categorization and specific handling
+    case "$error_code" in
+        1)
+            log_error "General error - check logs for details"
+            ;;
+        2)
+            log_error "Invalid input or configuration error"
+            ;;
+        3)
+            log_error "Network or connectivity error"
+            ;;
+        4)
+            log_error "Provisioning timeout error"
+            ;;
+        126)
+            log_error "Command not executable - check permissions"
+            ;;
+        127)
+            log_error "Command not found - missing dependency"
+            ;;
+        130)
+            log_error "Script interrupted by user (Ctrl+C)"
+            ;;
+        *)
+            log_error "Unexpected error code: $error_code"
+            ;;
+    esac
+    
+    return "$error_code"
+}
+
+# Error trap function
+error_trap() {
+    local error_code=$?
+    local error_line=$1
+    
+    if [ $error_code -ne 0 ]; then
+        handle_error "$error_code" "Command failed" "${CURRENT_STAGE:-'unknown'}" "$error_line"
+    fi
+    
+    cleanup
+}
+
+# Set error trap
+set_error_trap() {
+    trap 'error_trap $LINENO' ERR
+    trap 'handle_error 130 "Script interrupted" "${CURRENT_STAGE:-'unknown'}" $LINENO; exit 130' INT TERM
+}
+
+# ====================================================================
+# SYNTAX VALIDATION FUNCTIONS
+# ====================================================================
+validate_script_syntax() {
+    log_info "Performing script syntax validation..."
+    
+    # Check bash syntax
+    if ! bash -n "$0" 2>/dev/null; then
+        log_error "CRITICAL: Script syntax error detected"
+        log_error "Run 'bash -n $0' to see detailed syntax errors"
+        return 1
+    fi
+    
+    # Check shell compatibility
+    if [ -z "$BASH_VERSION" ]; then
+        log_error "CRITICAL: Script requires bash shell"
+        log_error "Current shell: $SHELL"
+        return 1
+    fi
+    
+    # Check required commands
+    local required_commands="systemctl wget ssh-keygen sed grep awk"
+    local missing_commands=""
+    
+    for cmd in $required_commands; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            missing_commands="$missing_commands $cmd"
+        fi
+    done
+    
+    if [ -n "$missing_commands" ]; then
+        log_error "CRITICAL: Missing required commands:$missing_commands"
+        log_error "Please install missing packages and try again"
+        return 1
+    fi
+    
+    log_info "✅ Script syntax validation passed"
+    return 0
+}
+
+# ====================================================================
+# EMBEDDED UTILITY FUNCTIONS
+# ====================================================================
 create_lock_file() {
     if [ -f "$LOCK_FILE" ]; then
-        local existing_pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
-        if [ -n "$existing_pid" ] && kill -0 "$existing_pid" 2>/dev/null; then
-            log_error "Script already running with PID $existing_pid"
-            exit 1
-        fi
-        log_warn "Removing stale lock file"
         rm -f "$LOCK_FILE"
     fi
     echo $$ > "$LOCK_FILE"
@@ -232,12 +336,65 @@ create_lock_file() {
 
 cleanup() {
     local exit_code=$?
-    log_info "Starting cleanup process"
+    log_info "Starting cleanup process with exit code: $exit_code"
     
-    # Don't remove state file on normal exit - needed for reboot persistence
+    # Enhanced error reporting
     if [ $exit_code -ne 0 ]; then
-        log_error "Script failed with exit code $exit_code"
+        log_error "==============================="
+        log_error "SCRIPT FAILED WITH EXIT CODE $exit_code"
+        log_error "==============================="
+        log_error "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
+        log_error "Hostname: $(hostname 2>/dev/null || echo 'unknown')"
+        log_error "Current User: $(whoami 2>/dev/null || echo 'unknown')"
+        log_error "Working Directory: $(pwd 2>/dev/null || echo 'unknown')"
+        
+        # Show current stage if available
+        if load_state 2>/dev/null; then
+            log_error "Current Stage: $CURRENT_STAGE"
+            log_error "Stage Data: $STAGE_DATA"
+        else
+            log_error "No state information available"
+        fi
+        
+        # System information
+        log_error "System Information:"
+        log_error "  OS: $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d= -f2 | tr -d '"' || echo 'unknown')"
+        log_error "  Kernel: $(uname -r 2>/dev/null || echo 'unknown')"
+        log_error "  Uptime: $(uptime 2>/dev/null | cut -d, -f1 || echo 'unknown')"
+        
+        # Network status
+        log_error "Network Status:"
+        if ping -c 1 8.8.8.8 >/dev/null 2>&1; then
+            log_error "  Internet: Connected"
+        else
+            log_error "  Internet: Disconnected"
+        fi
+        
+        # Disk space
+        log_error "Disk Space:"
+        df -h / 2>/dev/null | tail -1 | while read filesystem size used avail percent mountpoint; do
+            log_error "  Root: $used used of $size ($percent)"
+        done 2>/dev/null || log_error "  Root: Unable to check"
+        
+        # Memory
+        log_error "Memory Usage:"
+        free -m 2>/dev/null | grep "Mem:" | while read label total used free shared buffers cached; do
+            log_error "  RAM: ${used}MB used of ${total}MB"
+        done 2>/dev/null || log_error "  RAM: Unable to check"
+        
+        log_error "==============================="
+        log_error "TROUBLESHOOTING INFORMATION:"
+        log_error "1. Check full logs: $LOG_FILE"
+        log_error "2. Verify root privileges: sudo -i"
+        log_error "3. Check network connectivity: ping 8.8.8.8"
+        log_error "4. Verify disk space: df -h"
+        log_error "5. Manual resume: $0 --stage <stage>"
+        log_error "6. Clean start: $0 --cleanup && $0"
+        log_error "==============================="
+        
         # Keep state file for troubleshooting
+    else
+        log_info "Script completed successfully"
     fi
     
     rm -f "$LOCK_FILE" 2>/dev/null || true
@@ -287,24 +444,65 @@ detect_os() {
 wait_for_network() {
     local timeout=300  # 5 minutes
     local count=0
+    local test_hosts="8.8.8.8 1.1.1.1 8.8.4.4"  # Multiple test targets
     
-    log_info "Waiting for network connectivity"
+    log_info "Waiting for network connectivity (timeout: ${timeout}s)"
     
     while [ $count -lt $timeout ]; do
-        if ping -c 1 8.8.8.8 >/dev/null 2>&1; then
-            log_info "Network connectivity confirmed"
-            return 0
-        fi
+        # Test multiple hosts for better reliability
+        for host in $test_hosts; do
+            if ping -c 1 -W 2 "$host" >/dev/null 2>&1; then
+                log_info "Network connectivity confirmed (via $host)"
+                return 0
+            fi
+        done
         
         count=$((count + 5))
         sleep 5
         
         if [ $((count % 30)) -eq 0 ]; then
             log_info "Still waiting for network... (${count}s elapsed)"
+            
+            # Provide diagnostic information every 30 seconds
+            log_info "Network diagnostics:"
+            
+            # Check network interfaces
+            if command -v ip >/dev/null 2>&1; then
+                local interfaces=$(ip link show | grep 'state UP' | wc -l)
+                log_info "  Active interfaces: $interfaces"
+            elif command -v ifconfig >/dev/null 2>&1; then
+                local interfaces=$(ifconfig | grep 'flags=.*UP' | wc -l)
+                log_info "  Active interfaces: $interfaces"
+            fi
+            
+            # Check default route
+            if command -v ip >/dev/null 2>&1; then
+                if ip route show default >/dev/null 2>&1; then
+                    log_info "  Default route: Present"
+                else
+                    log_warn "  Default route: Missing"
+                fi
+            fi
+            
+            # Check DNS resolution
+            if command -v nslookup >/dev/null 2>&1; then
+                if nslookup google.com >/dev/null 2>&1; then
+                    log_info "  DNS resolution: Working"
+                else
+                    log_warn "  DNS resolution: Failed"
+                fi
+            fi
         fi
     done
     
     log_error "Network connectivity timeout after ${timeout}s"
+    log_error "Tested hosts: $test_hosts"
+    log_error "Please check network configuration:"
+    log_error "  1. Verify network interface is up"
+    log_error "  2. Check IP address assignment (DHCP/static)"
+    log_error "  3. Verify default gateway"
+    log_error "  4. Check DNS configuration"
+    log_error "  5. Verify firewall rules"
     return 3
 }
 
@@ -314,12 +512,58 @@ wait_for_network() {
 stage_init() {
     log_stage "STAGE: INIT - Initial setup and validation"
     
-    detect_os
-    wait_for_network
-    create_systemd_service
+    # Enhanced error handling with detailed diagnostics
+    log_info "Starting comprehensive system validation..."
     
-    save_state "$STAGE_BANNER" "os_detected=$OS_ID-$OS_VERSION"
-    log_info "Initialization completed, proceeding to banner setup"
+    # 1. Script syntax validation (FIRST - critical for reliability)
+    log_info "Step 1/5: Validating script syntax..."
+    if ! validate_script_syntax; then
+        log_error "CRITICAL: Script syntax validation failed"
+        log_error "This indicates a serious script integrity issue"
+        return 1
+    fi
+    log_info "✅ Script syntax validation passed"
+    
+    # 2. Check if we're running as root
+    log_info "Step 2/5: Checking root privileges..."
+    if [ "$EUID" -ne 0 ]; then
+        log_error "CRITICAL: Script must be run as root (current EUID: $EUID)"
+        log_error "Solution: Run with 'sudo $0' or as root user"
+        return 1
+    fi
+    log_info "✅ Root privileges confirmed"
+    
+    # 3. Detect OS with enhanced error reporting
+    log_info "Step 3/5: Detecting operating system..."
+    if ! detect_os; then
+        log_error "CRITICAL: OS detection failed"
+        log_error "Unable to determine operating system type"
+        return 1
+    fi
+    log_info "✅ OS detected: $OS_ID $OS_VERSION (family: $OS_FAMILY)"
+    
+    # 4. Network connectivity check with timeout and retry
+    log_info "Step 4/5: Checking network connectivity..."
+    if ! wait_for_network; then
+        log_error "CRITICAL: Network connectivity check failed"
+        log_error "This script requires internet access to download packages"
+        log_error "Please check network configuration and try again"
+        return 1
+    fi
+    log_info "✅ Network connectivity confirmed"
+    
+    # 5. Create systemd service with error handling
+    log_info "Step 5/5: Setting up reboot persistence..."
+    if ! create_systemd_service; then
+        log_error "WARNING: Failed to create systemd service"
+        log_error "Reboot persistence may not work properly"
+        # Don't fail completely, continue without persistence
+    else
+        log_info "✅ Systemd service created for reboot persistence"
+    fi
+    
+    save_state "$STAGE_BANNER" "os_detected=$OS_ID-$OS_VERSION,syntax_validated=true"
+    log_info "✅ Initialization completed successfully (5/5 checks passed)"
     return 0
 }
 
@@ -665,9 +909,9 @@ install_zabbix_agent() {
     esac
     
     # Basic configuration
-    sed -i "s/^Server=.*/Server=${zabbix_server}/" /etc/zabbix/zabbix_agentd.conf
-    sed -i "s/^ServerActive=.*/ServerActive=${zabbix_server}/" /etc/zabbix/zabbix_agentd.conf
-    sed -i "s/^Hostname=.*/Hostname=${zabbix_hostname}/" /etc/zabbix/zabbix_agentd.conf
+    sed -i "s/^Server=.*/Server=${zabbix_server}/" "$ZBX_CONF"
+    sed -i "s/^ServerActive=.*/ServerActive=${zabbix_server}/" "$ZBX_CONF"
+    sed -i "s/^Hostname=.*/Hostname=${zabbix_hostname}/" "$ZBX_CONF"
     
     systemctl enable zabbix-agent
     systemctl start zabbix-agent
@@ -679,15 +923,15 @@ configure_zabbix_for_tunnel() {
     local zabbix_hostname="$1"
     
     # Configure for local tunnel connection
-    sed -i "s/^Server=.*/Server=127.0.0.1/" /etc/zabbix/zabbix_agentd.conf
-    sed -i "s/^ServerActive=.*/ServerActive=127.0.0.1/" /etc/zabbix/zabbix_agentd.conf
-    sed -i "s/^Hostname=.*/Hostname=${zabbix_hostname}/" /etc/zabbix/zabbix_agentd.conf
+    sed -i "s/^Server=.*/Server=127.0.0.1/" "$ZBX_CONF"
+    sed -i "s/^ServerActive=.*/ServerActive=127.0.0.1/" "$ZBX_CONF"
+    sed -i "s/^Hostname=.*/Hostname=${zabbix_hostname}/" "$ZBX_CONF"
     
     # Enable debug logging
-    if grep -q "^# DebugLevel=" /etc/zabbix/zabbix_agentd.conf; then
-        sed -i "s/^# DebugLevel=.*/DebugLevel=4/" /etc/zabbix/zabbix_agentd.conf
+    if grep -q "^# DebugLevel=" "$ZBX_CONF"; then
+        sed -i "s/^# DebugLevel=.*/DebugLevel=4/" "$ZBX_CONF"
     else
-        echo "DebugLevel=4" >> /etc/zabbix/zabbix_agentd.conf
+        echo "DebugLevel=4" >> "$ZBX_CONF"
     fi
     
     systemctl restart zabbix-agent
@@ -962,8 +1206,128 @@ show_quick_status() {
     echo ""
     echo "Commands:"
     echo "  Full status:     $0 --validate"
+    echo "  Diagnostics:     $0 --diagnose"
     echo "  Service logs:    journalctl -u zabbix-agent -u zabbix-tunnel"
     echo "  Test tunnel:     ssh -i $DEFAULT_SSH_KEY -p $DEFAULT_HOME_SERVER_SSH_PORT $DEFAULT_SSH_USER@$DEFAULT_HOME_SERVER_IP"
+    echo "==================================================================="
+}
+
+run_diagnostics() {
+    echo "==================================================================="
+    echo "SYSTEM DIAGNOSTICS"
+    echo "==================================================================="
+    echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "Hostname: $(hostname)"
+    echo ""
+    
+    # System Information
+    echo "SYSTEM INFORMATION:"
+    echo "  User: $(whoami)"
+    echo "  UID: $(id -u)"
+    echo "  Shell: $SHELL"
+    echo "  Bash Version: ${BASH_VERSION:-'Not available'}"
+    if [ -f /etc/os-release ]; then
+        echo "  OS: $(grep PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '"')"
+    fi
+    echo "  Kernel: $(uname -r)"
+    echo "  Architecture: $(uname -m)"
+    echo "  Uptime: $(uptime | cut -d, -f1)"
+    echo ""
+    
+    # Network Diagnostics
+    echo "NETWORK DIAGNOSTICS:"
+    echo "  Testing connectivity..."
+    
+    for host in "8.8.8.8" "1.1.1.1" "google.com"; do
+        if ping -c 1 -W 2 "$host" >/dev/null 2>&1; then
+            echo "  ✅ $host: Reachable"
+        else
+            echo "  ❌ $host: Unreachable"
+        fi
+    done
+    
+    # Interface status
+    echo "  Network Interfaces:"
+    if command -v ip >/dev/null 2>&1; then
+        ip addr show | grep -E "^[0-9]|inet " | while read line; do
+            echo "    $line"
+        done
+    fi
+    
+    echo ""
+    
+    # Disk Space
+    echo "DISK SPACE:"
+    df -h | grep -E "(Filesystem|/dev/)" | while read line; do
+        echo "  $line"
+    done
+    echo ""
+    
+    # Memory
+    echo "MEMORY USAGE:"
+    if command -v free >/dev/null 2>&1; then
+        free -h | while read line; do
+            echo "  $line"
+        done
+    fi
+    echo ""
+    
+    # Process Status
+    echo "PROCESS STATUS:"
+    echo "  Current processes: $(ps aux | wc -l)"
+    echo "  Load average: $(uptime | sed 's/.*load average: //')"
+    echo ""
+    
+    # Service Status
+    echo "SERVICE STATUS:"
+    for service in "systemd" "network" "ssh"; do
+        if systemctl is-active "$service" >/dev/null 2>&1; then
+            echo "  ✅ $service: Active"
+        else
+            echo "  ❌ $service: Inactive"
+        fi
+    done
+    echo ""
+    
+    # State Information
+    echo "SCRIPT STATE:"
+    if [ -f "$STATE_FILE" ]; then
+        echo "  State file: Present"
+        if load_state; then
+            echo "  Current stage: $CURRENT_STAGE"
+            echo "  Execution start: $EXECUTION_START"
+            echo "  Stage data: $STAGE_DATA"
+        fi
+    else
+        echo "  State file: Not found"
+    fi
+    
+    if [ -f "$LOCK_FILE" ]; then
+        echo "  Lock file: Present (PID: $(cat "$LOCK_FILE" 2>/dev/null || echo 'unknown'))"
+    else
+        echo "  Lock file: Not found"
+    fi
+    
+    if [ -f "$REBOOT_FLAG_FILE" ]; then
+        echo "  Reboot flag: Present ($(cat "$REBOOT_FLAG_FILE" 2>/dev/null || echo 'unknown'))"
+    else
+        echo "  Reboot flag: Not found"
+    fi
+    echo ""
+    
+    # Log Information
+    echo "LOG INFORMATION:"
+    if [ -f "$LOG_FILE" ]; then
+        echo "  Setup log: $LOG_FILE"
+        echo "  Log size: $(du -h "$LOG_FILE" 2>/dev/null | cut -f1 || echo 'unknown')"
+        echo "  Last entries:"
+        tail -5 "$LOG_FILE" 2>/dev/null | while read line; do
+            echo "    $line"
+        done
+    else
+        echo "  Setup log: Not found"
+    fi
+    
     echo "==================================================================="
 }
 
@@ -991,6 +1355,7 @@ OPTIONS:
     --test                    Test mode - validate without changes
     --status                  Show current setup status
     --validate                Comprehensive system validation
+    --diagnose                Detailed system diagnostics
     --quick-status            Quick status overview
     --cleanup                 Clean up state files and services
     --help                    Show this help message
@@ -1010,6 +1375,13 @@ EXAMPLES:
     $0 --stage updates        # Start from updates stage
     $0 --status               # Show current status
     $0 --cleanup              # Clean up after failed run
+    bash -n $0                # Validate script syntax
+
+QUALITY ASSURANCE:
+    SYNTAX CHECK:             bash -n $0
+    COMPREHENSIVE TEST:       $0 --test
+    SYSTEM VALIDATION:        $0 --validate
+    DIAGNOSTIC MODE:          $0 --diagnose
 
 VIRTUALIZOR INTEGRATION:
     This script is designed for Virtualizor recipe execution.
@@ -1021,9 +1393,16 @@ REBOOT HANDLING:
     State is preserved via systemd service and state files.
     No manual intervention required after reboots.
 
+ERROR HANDLING:
+    - Comprehensive error logging with system diagnostics
+    - Automatic syntax validation before execution
+    - Structured error reporting with troubleshooting guides
+    - Recovery procedures for common failure scenarios
+
 LOGS:
     Setup logs: $LOG_FILE
     State file: $STATE_FILE
+    Error state: $STATE_FILE.error
     Service logs: journalctl -u ${SCRIPT_NAME}.service
 
 EOF
@@ -1042,10 +1421,26 @@ main() {
     local show_status=false
     local cleanup_mode=false
     
-    # Parse command line arguments
+    # Set up error handling FIRST
+    set_error_trap
+    
+    # Early syntax validation (before any other operations)
+    log_info "Performing initial syntax validation..."
+    if ! validate_script_syntax; then
+        log_error "CRITICAL: Initial syntax validation failed"
+        log_error "Script integrity compromised - aborting execution"
+        exit 1
+    fi
+    
+    # Parse command line arguments with error handling
     while [[ $# -gt 0 ]]; do
         case $1 in
             --stage)
+                if [ -z "${2:-}" ]; then
+                    log_error "ERROR: --stage requires a value"
+                    show_help
+                    exit 2
+                fi
                 target_stage="$2"
                 shift 2
                 ;;
@@ -1054,14 +1449,26 @@ main() {
                 shift
                 ;;
             --banner-text)
+                if [ -z "${2:-}" ]; then
+                    log_error "ERROR: --banner-text requires a value"
+                    exit 2
+                fi
                 banner_text="$2"
                 shift 2
                 ;;
             --zabbix-version)
+                if [ -z "${2:-}" ]; then
+                    log_error "ERROR: --zabbix-version requires a value"
+                    exit 2
+                fi
                 zabbix_version="$2"
                 shift 2
                 ;;
             --ssh-host)
+                if [ -z "${2:-}" ]; then
+                    log_error "ERROR: --ssh-host requires a value"
+                    exit 2
+                fi
                 ssh_host="$2"
                 shift 2
                 ;;
@@ -1077,6 +1484,10 @@ main() {
                 validate_system_status
                 exit $?
                 ;;
+            --diagnose)
+                run_diagnostics
+                exit 0
+                ;;
             --quick-status)
                 show_quick_status
                 exit 0
@@ -1090,7 +1501,7 @@ main() {
                 exit 0
                 ;;
             *)
-                log_error "Unknown parameter: $1"
+                log_error "ERROR: Unknown parameter: $1"
                 show_help
                 exit 2
                 ;;

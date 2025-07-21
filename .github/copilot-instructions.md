@@ -3,6 +3,38 @@
 ## **CRITICAL RULE: Always Review Before Coding**
 Before writing ANY new code, ALWAYS check existing scripts in `/scripts/` and `/docs/` to understand patterns, logging format, and error handling. Consistency prevents bugs.
 
+## **MANDATORY QUALITY ASSURANCE REQUIREMENTS**
+**ALWAYS follow these requirements for ALL code changes:**
+
+### 1. Syntax Error Prevention (MANDATORY)
+- **Always perform syntax error checking** before script execution
+- Use `bash -n script.sh` to validate syntax
+- Include syntax validation functions in all scripts
+- Never deploy scripts without syntax validation
+- Check shell compatibility (bash vs other shells)
+
+### 2. Error Logging & Handling (MANDATORY)  
+- **Implement comprehensive error logging** for all operations
+- **Use structured error handling** with proper error codes
+- Log error context: stage, timestamp, system state
+- Provide detailed troubleshooting information
+- Catch and handle all error types gracefully
+- Use error traps to catch unexpected failures
+
+### 3. Documentation Updates (MANDATORY)
+- **Update documentation after final checks** and testing
+- Document all error conditions and recovery procedures
+- Include troubleshooting guides for common issues
+- Update help text and usage examples
+- Keep documentation synchronized with code changes
+
+### 4. Script Simplicity (MANDATORY)
+- **Keep scripts as simple as possible** while maintaining functionality
+- Avoid unnecessary complexity or over-engineering
+- Use clear, readable code structure
+- Minimize external dependencies
+- Follow single responsibility principle for functions
+
 ## **TEMPLATE USAGE WARNING**
 Files in `/scripts/` may be TEMPLATES demonstrating proper patterns. Look for "TEMPLATE SCRIPT" headers. Never use templates as-is - always customize configuration, validation, and logic for your specific use case.
 
@@ -63,7 +95,7 @@ For Virtualizor deployments, **ALWAYS use the master script**:
 ## Mandatory Standards
 
 ### Self-Contained Script Structure
-Every script MUST be completely independent:
+Every script MUST be completely independent and follow quality assurance requirements:
 ```bash
 #!/bin/bash
 # Script: [name] - [brief description]
@@ -72,6 +104,31 @@ Every script MUST be completely independent:
 # Author: [name] | Date: [date]
 
 set -euo pipefail  # Exit on errors, undefined vars, pipe failures
+
+# MANDATORY: Include syntax validation
+validate_script_syntax() {
+    if ! bash -n "$0" 2>/dev/null; then
+        log_error "CRITICAL: Script syntax error detected"
+        return 1
+    fi
+    return 0
+}
+
+# MANDATORY: Comprehensive error handling
+handle_error() {
+    local error_code="$1"
+    local error_message="$2"
+    local error_stage="${3:-'unknown'}"
+    log_error "=== ERROR: Code $error_code - $error_message in $error_stage ==="
+    # Include system diagnostics and troubleshooting info
+    return "$error_code"
+}
+
+# MANDATORY: Set up error traps
+set_error_trap() {
+    trap 'handle_error $? "Command failed" "${CURRENT_STAGE:-'unknown'}"' ERR
+    trap 'handle_error 130 "Script interrupted" "${CURRENT_STAGE:-'unknown'}"; exit 130' INT TERM
+}
 
 # Embedded configuration (no external config files)
 readonly SCRIPT_NAME="$(basename "$0" .sh)"
@@ -108,6 +165,46 @@ log_message() {
 - **Provisioning Compatibility**: Handle interrupted provisioning and recipe re-runs
 
 ## Development Workflow
+
+### Pre-Deployment Quality Checklist (MANDATORY)
+Before ANY script deployment or code commit, verify ALL items:
+
+**SYNTAX & STRUCTURE:**
+- [ ] Run `bash -n script.sh` - no syntax errors
+- [ ] Validate script with ShellCheck if available  
+- [ ] Ensure script starts with proper shebang (`#!/bin/bash`)
+- [ ] Verify `set -euo pipefail` is present
+- [ ] Include syntax validation function in script
+
+**ERROR HANDLING:**
+- [ ] All functions return appropriate exit codes
+- [ ] Error traps are set up (`trap 'error_handler' ERR`)
+- [ ] Comprehensive error logging with context
+- [ ] System diagnostics included in error reports
+- [ ] Graceful handling of interruptions (Ctrl+C)
+- [ ] Specific error messages for different failure types
+
+**LOGGING & DEBUGGING:**
+- [ ] Structured logging format with timestamps
+- [ ] Debug information for troubleshooting
+- [ ] Error logs include system state information
+- [ ] Log files created with proper permissions
+- [ ] Success/failure clearly indicated in logs
+
+**DOCUMENTATION:**
+- [ ] Help text updated with new options
+- [ ] Usage examples included and tested
+- [ ] Error recovery procedures documented
+- [ ] Troubleshooting section updated
+- [ ] Version/date information current
+
+**TESTING:**
+- [ ] Test with invalid parameters
+- [ ] Test interruption scenarios (Ctrl+C)
+- [ ] Test network connectivity failures
+- [ ] Test insufficient permissions
+- [ ] Test disk space limitations
+- [ ] Verify cleanup procedures work
 
 ### Before Writing Code
 1. Read existing scripts in `/scripts/` to understand the self-contained patterns
