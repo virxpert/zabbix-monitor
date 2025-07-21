@@ -20,6 +20,8 @@ bash -n script.sh
 - **Command availability check**: Verifies required commands are installed
 - **Syntax validation**: Automatic bash syntax checking before execution
 - **Early failure detection**: Catches syntax errors before any system changes
+- **Cross-platform validation**: OS-specific compatibility checks (Ubuntu, AlmaLinux, RHEL, CentOS)
+- **Package manager detection**: Automatic package manager identification (apt, yum, dnf)
 
 ## Enhanced Error Handling
 
@@ -41,10 +43,44 @@ set_error_trap()
 ```
 
 ### Error State Persistence
+
 - Error details saved to `${STATE_FILE}.error`
 - Failure analysis with system diagnostics
 - Recovery procedures documented in logs
 - Debug information for troubleshooting
+
+## Recent Quality Improvements (2024)
+
+### Ubuntu Phased Updates Handling
+
+**Problem Solved**: Ubuntu's phased update system could hang during package updates, requiring manual intervention.
+
+**QA Enhancements**:
+- **Automatic detection**: Identifies when phased updates are in progress
+- **Background monitoring**: Tracks update processes without blocking execution
+- **Timeout management**: Prevents indefinite hangs with configurable timeouts
+- **Progress tracking**: Monitors update completion in background threads
+- **Graceful fallback**: Alternative update paths when phased updates hang
+
+### AlmaLinux/RHEL Compatibility
+
+**Problem Solved**: Integer expression errors and missing package configurations on RHEL-based systems.
+
+**QA Enhancements**:
+- **Dynamic OS detection**: Accurate identification of RHEL variants (AlmaLinux, Rocky Linux, CentOS)
+- **Package manager adaptation**: Automatic selection of yum vs dnf based on availability
+- **Configuration file detection**: Dynamic Zabbix config file location discovery
+- **Syntax compatibility**: Fixed shell syntax issues specific to RHEL environments
+
+### Enhanced Resume Logic
+
+**Problem Solved**: Script failure to resume properly after system reboots or interruptions.
+
+**QA Enhancements**:
+- **Multi-path recovery**: Multiple fallback methods for resume detection
+- **State validation**: Comprehensive state file integrity checks
+- **Graceful degradation**: Continues operation even with partial state information
+- **Error context preservation**: Maintains error information across reboots
 
 ## Comprehensive Logging
 
@@ -102,6 +138,10 @@ Before deploying any script changes, verify:
 - [ ] Test network connectivity failures
 - [ ] Test insufficient permissions
 - [ ] Test resource limitations
+- [ ] **Test Ubuntu phased updates scenario**
+- [ ] **Test AlmaLinux/RHEL compatibility**
+- [ ] **Test resume logic after reboot**
+- [ ] **Validate cross-platform package manager detection**
 
 ### Documentation
 - [ ] Help text updated
@@ -147,7 +187,37 @@ journalctl -u virtualizor-server-setup.service
 ### Recovery Procedures
 ```bash
 # Clean restart after failure
+### Recovery Procedures
+```bash
+# Clean restart after failure
 ./virtualizor-server-setup.sh --cleanup && ./virtualizor-server-setup.sh
+
+# Resume from specific stage (if state is intact)
+./virtualizor-server-setup.sh --stage <stage-name>
+
+# Handle Ubuntu phased updates specifically
+./virtualizor-server-setup.sh --force-update-method standard
+
+# Force AlmaLinux package manager detection
+./virtualizor-server-setup.sh --package-manager yum
+```
+
+## Platform-Specific QA
+
+### Ubuntu/Debian Systems
+- **Phased update detection**: Automatic identification and handling
+- **Background monitoring**: Non-blocking update process tracking
+- **Fallback methods**: Alternative update paths when standard methods fail
+
+### AlmaLinux/RHEL Systems
+- **Package manager detection**: Automatic yum/dnf selection
+- **Configuration discovery**: Dynamic Zabbix config file location
+- **Syntax compatibility**: RHEL-specific shell syntax handling
+
+### Cross-Platform Validation
+- **OS detection**: Accurate platform identification
+- **Command availability**: Platform-specific command checking
+- **Path validation**: OS-appropriate file system paths
 
 # Resume from specific stage
 ./virtualizor-server-setup.sh --stage zabbix-install

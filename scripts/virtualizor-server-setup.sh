@@ -22,8 +22,8 @@ readonly SCRIPT_NAME="$(basename "$0" .sh)"
 readonly LOG_DIR="/var/log/zabbix-scripts"
 readonly LOG_FILE="${LOG_DIR}/${SCRIPT_NAME}-$(date +%Y%m%d).log"
 readonly LOCK_FILE="/var/run/${SCRIPT_NAME}.pid"
-readonly STATE_FILE="/var/run/${SCRIPT_NAME}.state"
-readonly REBOOT_FLAG_FILE="/var/run/${SCRIPT_NAME}.reboot"
+readonly STATE_FILE="/var/lib/${SCRIPT_NAME}.state"
+readonly REBOOT_FLAG_FILE="/var/lib/${SCRIPT_NAME}.reboot"
 readonly SYSTEMD_SERVICE_FILE="/etc/systemd/system/${SCRIPT_NAME}.service"
 
 # Stage definitions
@@ -66,7 +66,11 @@ readonly UPDATE_TIMEOUT=1800  # 30 minutes for updates
 # EMBEDDED LOGGING FUNCTIONS (no external dependencies)
 # ====================================================================
 setup_logging() {
+    # Ensure required directories exist with proper permissions
     mkdir -p "$LOG_DIR" 2>/dev/null || true
+    mkdir -p "$(dirname "$STATE_FILE")" 2>/dev/null || true
+    mkdir -p "$(dirname "$REBOOT_FLAG_FILE")" 2>/dev/null || true
+    
     # Create named pipes for logging (compatible with all shells)
     if command -v mkfifo >/dev/null 2>&1; then
         LOG_PIPE_OUT="/tmp/${SCRIPT_NAME}_out_$$"
@@ -167,6 +171,9 @@ create_systemd_service() {
     local script_path="$(readlink -f "$0")"
     log_info "Using script path: $script_path"
     
+    # Ensure state directories exist
+    mkdir -p "$(dirname "$REBOOT_FLAG_FILE")" 2>/dev/null || true
+    
     cat > "$SYSTEMD_SERVICE_FILE" << EOF
 [Unit]
 Description=Virtualizor Server Setup - Reboot Persistent
@@ -224,6 +231,26 @@ schedule_reboot() {
 # ====================================================================
 # EMBEDDED UTILITY FUNCTIONS
 # ====================================================================
+
+# Monitor system activity during long operations
+show_system_activity() {
+    local process_name="${1:-apt}"
+    log_info "System Activity - Load: $(uptime | awk '{print $NF}') | Memory: $(free -m | awk 'NR==2{printf "%.1f%%", $3*100/$2}')"
+    
+    # Show active package management processes
+    local active_procs=$(pgrep -f "$process_name" | wc -l)
+    if [ "$active_procs" -gt 0 ]; then
+        log_info "Active $process_name processes: $active_procs"
+        # Show what dpkg is currently doing
+        if pgrep dpkg >/dev/null 2>&1; then
+            local dpkg_status=$(ps -eo pid,state,comm,args | grep dpkg | grep -v grep | head -3)
+            if [ -n "$dpkg_status" ]; then
+                log_info "Current dpkg activity detected"
+            fi
+        fi
+    fi
+}
+
 # ====================================================================
 # ERROR HANDLING FUNCTIONS
 # ====================================================================
@@ -628,12 +655,16 @@ stage_updates() {
             
             # Optimize for faster kernel operations
             export INITRD=no  # Skip initramfs update during package installation
+            export APT_LISTCHANGES_FRONTEND=none  # Skip package change notifications
+            export NEEDRESTART_MODE=l  # Skip interactive service restart prompts
             
             # Create temporary dpkg configuration for faster processing
             cat > /etc/dpkg/dpkg.cfg.d/01_virtualizor << 'EOF'
 # Speed up package operations
 force-unsafe-io
 no-debsig
+force-confold
+force-confdef
 EOF
             
             log_info "Updating package lists"
@@ -645,6 +676,27 @@ EOF
             log_info "Checking for available upgrades"
             local upgrades=$(apt list --upgradable 2>/dev/null | grep -c upgradable || echo "0")
             local kernel_updates=$(apt list --upgradable 2>/dev/null | grep -c linux-image || echo "0")
+            
+            # Check for phased updates that might not actually be installable
+            local phased_updates=$(apt list --upgradable 2>/dev/null | grep -c "phased" || echo "0")
+            if [ "$phased_updates" -gt 0 ]; then
+                log_info "Detected $phased_updates phased updates (may be deferred)"
+                # Get actual installable updates by simulating upgrade
+                local actual_upgrades=$(apt-get upgrade -s 2>/dev/null | grep -c "^Inst " || echo "0")
+                if [ "$actual_upgrades" -lt "$upgrades" ]; then
+                    log_info "Adjusting upgrade count: $upgrades reported, $actual_upgrades actually installable"
+                    upgrades=$actual_upgrades
+                fi
+            fi
+            
+            # Ensure upgrades and kernel_updates are valid integers
+            if ! [[ "$upgrades" =~ ^[0-9]+$ ]]; then
+                log_warn "Unable to determine upgrade count, assuming 0"
+                upgrades=0
+            fi
+            if ! [[ "$kernel_updates" =~ ^[0-9]+$ ]]; then
+                kernel_updates=0
+            fi
             
             if [ "$upgrades" -gt 0 ]; then
                 log_info "Found $upgrades packages to upgrade"
@@ -664,29 +716,64 @@ EOF
                         -o Apt::Color=0 &
                     local apt_pid=$!
                     
-                    # Monitor progress every 60 seconds
+                    # Monitor progress every 60 seconds with a reasonable timeout
                     local elapsed=0
-                    while kill -0 $apt_pid 2>/dev/null; do
+                    local max_wait=300  # 5 minutes max wait for monitoring (apt should complete quickly if no real updates)
+                    
+                    while kill -0 $apt_pid 2>/dev/null && [ $elapsed -lt $max_wait ]; do
                         sleep 60
                         elapsed=$((elapsed + 60))
                         if [ $((elapsed % 300)) -eq 0 ]; then  # Every 5 minutes
                             log_info "Update still in progress... (${elapsed}s elapsed)"
+                            show_system_activity "apt"
                         fi
                     done
-                    wait $apt_pid
+                    
+                    # If process is still running after our monitoring timeout, it's a real long operation
+                    if kill -0 $apt_pid 2>/dev/null; then
+                        log_info "Long-running update detected, continuing monitoring..."
+                        wait $apt_pid
+                    else
+                        # Process completed during our monitoring
+                        wait $apt_pid 2>/dev/null || true
+                    fi
                 } || {
-                    log_error "System upgrade failed or timed out"
-                    return 1
+                    local exit_code=$?
+                    if [ $exit_code -eq 0 ]; then
+                        log_info "System upgrade completed (no actual updates installed)"
+                    else
+                        log_error "System upgrade failed or timed out (exit code: $exit_code)"
+                        return 1
+                    fi
                 }
                 
-                log_info "Installing security updates (keeping existing config files)"
-                if ! timeout $UPDATE_TIMEOUT apt-get dist-upgrade -y \
+                log_info "Installing security updates (keeping existing config files) - This may take additional time..."
+                {
+                    timeout $UPDATE_TIMEOUT apt-get dist-upgrade -y \
                         -o Dpkg::Options::="--force-confold" \
                         -o Dpkg::Options::="--force-confdef" \
+                        -o Dpkg::Options::="--force-overwrite" \
                         -o Dpkg::Use-Pty=0 \
-                        -o Apt::Color=0; then
+                        -o Apt::Color=0 \
+                        -o Apt::Get::Assume-Yes=true \
+                        -o Apt::Get::Fix-Broken=true \
+                        -q &
+                    local dist_upgrade_pid=$!
+                    
+                    # Monitor dist-upgrade progress every 60 seconds
+                    local dist_elapsed=0
+                    while kill -0 $dist_upgrade_pid 2>/dev/null; do
+                        sleep 60
+                        dist_elapsed=$((dist_elapsed + 60))
+                        if [ $((dist_elapsed % 300)) -eq 0 ]; then  # Every 5 minutes
+                            log_info "Security update still in progress... (${dist_elapsed}s elapsed)"
+                            show_system_activity "apt"
+                        fi
+                    done
+                    wait $dist_upgrade_pid
+                } || {
                     log_warn "Security upgrade failed or timed out, continuing"
-                fi
+                }
                 
                 # Clean up temporary configuration
                 rm -f /etc/dpkg/dpkg.cfg.d/01_virtualizor
@@ -713,16 +800,24 @@ EOF
                 return 1
             fi
             
-            local updates=$($package_manager check-update -q | wc -l || echo "0")
+            local updates=$($package_manager check-update -q 2>/dev/null | wc -l | tr -d '\n\r ' || echo "0")
+            # Ensure updates is a valid integer
+            if ! [[ "$updates" =~ ^[0-9]+$ ]]; then
+                log_warn "Unable to determine update count, assuming 0"
+                updates=0
+            fi
+            
             if [ "$updates" -gt 0 ]; then
-                log_info "Found updates available"
+                log_info "Found $updates updates available"
                 update_required=true
                 
-                log_info "Installing system updates"
+                log_info "Installing system updates using $package_manager"
                 if ! timeout $UPDATE_TIMEOUT $package_manager update -y -q; then
                     log_error "System update failed or timed out"
                     return 1
                 fi
+            else
+                log_info "No updates available"
             fi
             ;;
     esac
@@ -979,10 +1074,35 @@ install_zabbix_agent() {
             ;;
     esac
     
+    # Detect the correct Zabbix configuration file location
+    local zabbix_conf=""
+    local possible_configs=(
+        "/etc/zabbix/zabbix_agentd.conf"
+        "/etc/zabbix/zabbix_agent2.conf" 
+        "/etc/zabbix_agentd.conf"
+        "/usr/local/etc/zabbix_agentd.conf"
+    )
+    
+    for config_file in "${possible_configs[@]}"; do
+        if [ -f "$config_file" ]; then
+            zabbix_conf="$config_file"
+            log_info "Found Zabbix config at: $zabbix_conf"
+            break
+        fi
+    done
+    
+    if [ -z "$zabbix_conf" ]; then
+        log_error "No Zabbix configuration file found after installation. Checked locations:"
+        for config_file in "${possible_configs[@]}"; do
+            log_error "  - $config_file"
+        done
+        return 1
+    fi
+    
     # Basic configuration
-    sed -i "s/^Server=.*/Server=${zabbix_server}/" "$ZBX_CONF"
-    sed -i "s/^ServerActive=.*/ServerActive=${zabbix_server}/" "$ZBX_CONF"
-    sed -i "s/^Hostname=.*/Hostname=${zabbix_hostname}/" "$ZBX_CONF"
+    sed -i "s/^Server=.*/Server=${zabbix_server}/" "$zabbix_conf"
+    sed -i "s/^ServerActive=.*/ServerActive=${zabbix_server}/" "$zabbix_conf"
+    sed -i "s/^Hostname=.*/Hostname=${zabbix_hostname}/" "$zabbix_conf"
     
     systemctl enable zabbix-agent
     systemctl start zabbix-agent
@@ -993,16 +1113,41 @@ install_zabbix_agent() {
 configure_zabbix_for_tunnel() {
     local zabbix_hostname="$1"
     
+    # Detect the correct Zabbix configuration file location
+    local zabbix_conf=""
+    local possible_configs=(
+        "/etc/zabbix/zabbix_agentd.conf"
+        "/etc/zabbix/zabbix_agent2.conf" 
+        "/etc/zabbix_agentd.conf"
+        "/usr/local/etc/zabbix_agentd.conf"
+    )
+    
+    for config_file in "${possible_configs[@]}"; do
+        if [ -f "$config_file" ]; then
+            zabbix_conf="$config_file"
+            log_info "Found Zabbix config at: $zabbix_conf"
+            break
+        fi
+    done
+    
+    if [ -z "$zabbix_conf" ]; then
+        log_error "No Zabbix configuration file found. Checked locations:"
+        for config_file in "${possible_configs[@]}"; do
+            log_error "  - $config_file"
+        done
+        return 1
+    fi
+    
     # Configure for local tunnel connection
-    sed -i "s/^Server=.*/Server=127.0.0.1/" "$ZBX_CONF"
-    sed -i "s/^ServerActive=.*/ServerActive=127.0.0.1/" "$ZBX_CONF"
-    sed -i "s/^Hostname=.*/Hostname=${zabbix_hostname}/" "$ZBX_CONF"
+    sed -i "s/^Server=.*/Server=127.0.0.1/" "$zabbix_conf"
+    sed -i "s/^ServerActive=.*/ServerActive=127.0.0.1/" "$zabbix_conf"
+    sed -i "s/^Hostname=.*/Hostname=${zabbix_hostname}/" "$zabbix_conf"
     
     # Enable debug logging
-    if grep -q "^# DebugLevel=" "$ZBX_CONF"; then
-        sed -i "s/^# DebugLevel=.*/DebugLevel=4/" "$ZBX_CONF"
+    if grep -q "^# DebugLevel=" "$zabbix_conf"; then
+        sed -i "s/^# DebugLevel=.*/DebugLevel=4/" "$zabbix_conf"
     else
-        echo "DebugLevel=4" >> "$ZBX_CONF"
+        echo "DebugLevel=4" >> "$zabbix_conf"
     fi
     
     systemctl restart zabbix-agent
@@ -1165,8 +1310,26 @@ validate_system_status() {
     
     # Check Configuration Files
     log_info "Checking configuration files..."
-    if [ -f "$ZBX_CONF" ]; then
-        if grep -q "^Server=127.0.0.1" "$ZBX_CONF" && grep -q "^ServerActive=127.0.0.1" "$ZBX_CONF"; then
+    
+    # Detect the Zabbix configuration file location
+    local zabbix_conf=""
+    local possible_configs=(
+        "/etc/zabbix/zabbix_agentd.conf"
+        "/etc/zabbix/zabbix_agent2.conf" 
+        "/etc/zabbix_agentd.conf"
+        "/usr/local/etc/zabbix_agentd.conf"
+    )
+    
+    for config_file in "${possible_configs[@]}"; do
+        if [ -f "$config_file" ]; then
+            zabbix_conf="$config_file"
+            break
+        fi
+    done
+    
+    if [ -n "$zabbix_conf" ]; then
+        log_info "Found Zabbix config: $zabbix_conf"
+        if grep -q "^Server=127.0.0.1" "$zabbix_conf" && grep -q "^ServerActive=127.0.0.1" "$zabbix_conf"; then
             log_info "✅ Zabbix Config: Configured for tunnel (127.0.0.1)"
         else
             log_warn "⚠️  Zabbix Config: Not configured for local tunnel"
@@ -1386,6 +1549,28 @@ run_diagnostics() {
     fi
     echo ""
     
+    # REBOOT RESUME DIAGNOSTICS
+    echo "REBOOT RESUME DIAGNOSTICS:"
+    
+    if systemctl is-enabled "${SCRIPT_NAME}.service" >/dev/null 2>&1; then
+        echo "  Service enabled: YES"
+        if systemctl is-active "${SCRIPT_NAME}.service" >/dev/null 2>&1; then
+            echo "  Service active: YES"
+        else
+            echo "  Service active: NO"
+            echo "  Service logs (last 5 lines):"
+            journalctl -u "${SCRIPT_NAME}.service" --no-pager -n 5 2>/dev/null | while read line; do
+                echo "    $line"
+            done
+        fi
+    else
+        echo "  Service enabled: NO"
+    fi
+    
+    echo "  State directory: $(dirname "$STATE_FILE") ($([ -d "$(dirname "$STATE_FILE")" ] && echo "EXISTS" || echo "MISSING"))"
+    echo "  State file permissions: $(ls -l "$STATE_FILE" 2>/dev/null | awk '{print $1}' || echo "N/A")"
+    echo "  Reboot flag permissions: $(ls -l "$REBOOT_FLAG_FILE" 2>/dev/null | awk '{print $1}' || echo "N/A")"
+
     # Log Information
     echo "LOG INFORMATION:"
     if [ -f "$LOG_FILE" ]; then
@@ -1399,7 +1584,78 @@ run_diagnostics() {
         echo "  Setup log: Not found"
     fi
     
+    echo ""
+    
+    # Include reboot diagnostics
+    diagnose_reboot_issue
+    
     echo "==================================================================="
+}
+
+# ====================================================================
+# REBOOT DIAGNOSTICS AND RECOVERY
+# ====================================================================
+diagnose_reboot_issue() {
+    echo "REBOOT RESUME DIAGNOSTICS"
+    echo "========================="
+    
+    echo "1. SYSTEMD SERVICE STATUS:"
+    if systemctl is-enabled "${SCRIPT_NAME}.service" >/dev/null 2>&1; then
+        echo "  Service enabled: YES"
+        if systemctl is-active "${SCRIPT_NAME}.service" >/dev/null 2>&1; then
+            echo "  Service active: YES"
+        else
+            echo "  Service active: NO"
+        fi
+        
+        echo "  Service logs:"
+        journalctl -u "${SCRIPT_NAME}.service" --no-pager -n 10 2>/dev/null | while read line; do
+            echo "    $line"
+        done
+    else
+        echo "  Service enabled: NO"
+    fi
+    
+    echo ""
+    echo "2. FILE SYSTEM STATE:"
+    echo "  State file: $([ -f "$STATE_FILE" ] && echo "EXISTS" || echo "MISSING")"
+    echo "  Reboot flag: $([ -f "$REBOOT_FLAG_FILE" ] && echo "EXISTS" || echo "MISSING")"
+    echo "  State directory: $(dirname "$STATE_FILE")"
+    echo "  Directory permissions: $(ls -ld "$(dirname "$STATE_FILE")" 2>/dev/null | awk '{print $1}' || echo 'unknown')"
+    
+    if [ -f "$STATE_FILE" ]; then
+        echo ""
+        echo "  State file contents:"
+        cat "$STATE_FILE" | while read line; do
+            echo "    $line"
+        done
+    fi
+    
+    if [ -f "$REBOOT_FLAG_FILE" ]; then
+        echo ""
+        echo "  Reboot flag contents: $(cat "$REBOOT_FLAG_FILE")"
+    fi
+    
+    echo ""
+    echo "3. RECOVERY SUGGESTIONS:"
+    
+    if [ ! -f "$STATE_FILE" ]; then
+        echo "  - No state file found - run './$(basename "$0")' to start fresh setup"
+    elif [ -f "$REBOOT_FLAG_FILE" ]; then
+        echo "  - Reboot flag exists - run './$(basename "$0") --resume-after-reboot' to resume"
+    else
+        echo "  - State file exists but no reboot flag - run './$(basename "$0")' to continue"
+    fi
+    
+    if ! systemctl is-enabled "${SCRIPT_NAME}.service" >/dev/null 2>&1; then
+        echo "  - Service not enabled - this is normal after completion or cleanup"
+    fi
+    
+    echo ""
+    echo "4. MANUAL RESUME COMMAND:"
+    echo "  ./$(basename "$0") --resume-after-reboot"
+    
+    echo "========================="
 }
 
 # ====================================================================
@@ -1427,6 +1683,7 @@ OPTIONS:
     --status                  Show current setup status
     --validate                Comprehensive system validation
     --diagnose                Detailed system diagnostics
+    --diagnose-reboot         Diagnose reboot resume issues
     --quick-status            Quick status overview
     --cleanup                 Clean up state files and services
     --help                    Show this help message
@@ -1559,6 +1816,10 @@ main() {
                 run_diagnostics
                 exit 0
                 ;;
+            --diagnose-reboot)
+                diagnose_reboot_issue
+                exit 0
+                ;;
             --quick-status)
                 show_quick_status
                 exit 0
@@ -1619,14 +1880,49 @@ main() {
     
     # Determine starting stage
     if [ "$resume_after_reboot" = true ]; then
-        # Resume after reboot
+        # Resume after reboot - this is typically called by systemd service
+        log_info "Resume after reboot requested"
+        log_info "Checking for reboot flag: $REBOOT_FLAG_FILE"
+        log_info "Checking for state file: $STATE_FILE"
+        
         if next_stage=$(check_reboot_flag); then
             target_stage="$next_stage"
             clear_reboot_flag
-            log_info "Resuming after reboot: $target_stage"
+            log_info "Resuming after reboot with target stage: $target_stage"
         else
-            log_error "Resume requested but no reboot flag found"
-            exit 1
+            log_warn "No reboot flag found - attempting recovery"
+            
+            # Check if we're running from systemd service
+            if [ "${SYSTEMD_EXEC_PID:-}" = "$$" ] || [ -n "${INVOCATION_ID:-}" ]; then
+                log_info "Running from systemd service - disabling service and checking for saved state"
+                # Disable the systemd service since we don't need it without a reboot flag
+                remove_systemd_service 2>/dev/null || true
+            fi
+            
+            # Try to recover from saved state
+            if load_state && [ -n "$CURRENT_STAGE" ]; then
+                case "$CURRENT_STAGE" in
+                    "$STAGE_UPDATES")
+                        # We were in updates stage, assume reboot was needed
+                        target_stage="$STAGE_POST_REBOOT"
+                        log_info "Recovering from updates stage - proceeding to post-reboot stage"
+                        ;;
+                    *)
+                        target_stage="$CURRENT_STAGE"
+                        log_info "Recovering from saved state, continuing from: $target_stage"
+                        ;;
+                esac
+            else
+                log_info "No saved state found - checking if setup is already complete"
+                # If Zabbix is installed and configured, assume setup is complete
+                if systemctl is-active zabbix-agent >/dev/null 2>&1; then
+                    log_info "Zabbix agent is running - setup appears complete"
+                    target_stage="$STAGE_COMPLETE"
+                else
+                    log_info "Starting fresh setup"
+                    target_stage="$STAGE_INIT"
+                fi
+            fi
         fi
     elif [ -n "$target_stage" ]; then
         # Explicit stage specified

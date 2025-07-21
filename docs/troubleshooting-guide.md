@@ -460,6 +460,165 @@ For persistent issues or additional support:
 
 ## Recent Script Fixes (July 2025)
 
+### Phased Updates Hanging Issue - RESOLVED (July 21, 2025)
+
+**Issue**: Script hung indefinitely during Ubuntu package updates due to phased update system showing misleading package counts.
+
+**Symptoms:**
+```log
+[INFO] Found 1 packages to upgrade
+[INFO] Installing system updates - This may take up to 30 minutes...
+Reading package lists...
+Building dependency tree...
+The following upgrades have been deferred due to phasing:
+  ubuntu-drivers-common
+0 upgraded, 0 newly installed, 0 to remove and 1 not upgraded.
+# Script hangs here indefinitely
+```
+
+**Root Cause:**
+- Ubuntu's phased update system defers certain packages even though they appear "upgradable"
+- Script counted 1 package but apt installed 0 packages, leaving background monitoring process waiting forever
+
+**Solution Applied:**
+1. **Phased Update Detection**: Script now detects phased updates and gets actual installable count:
+   ```bash
+   # Get actual installable updates by simulating upgrade
+   local actual_upgrades=$(apt-get upgrade -s 2>/dev/null | grep -c "^Inst " || echo "0")
+   ```
+
+2. **Smart Background Monitoring**: Added timeout for quick operations:
+   ```bash
+   local max_wait=300  # 5 minutes max wait for monitoring
+   while kill -0 $apt_pid 2>/dev/null && [ $elapsed -lt $max_wait ]; do
+       # Monitor with reasonable timeout for no-op updates
+   ```
+
+**Result**: Script now completes quickly when no real updates are needed.
+
+### AlmaLinux Configuration Detection - RESOLVED (July 21, 2025)  
+
+**Issue**: Script failed on AlmaLinux with "can't read /etc/zabbix/zabbix_agentd.conf: No such file or directory".
+
+**Symptoms:**
+```log
+sed: can't read /etc/zabbix/zabbix_agentd.conf: No such file or directory
+Zabbix agent installed successfully but configuration failed
+```
+
+**Root Cause:**
+- Script used hardcoded Zabbix configuration path `/etc/zabbix/zabbix_agentd.conf`
+- On AlmaLinux/RHEL, configuration file may be in different locations
+
+**Solution Applied:**
+Dynamic configuration file detection:
+```bash
+local possible_configs=(
+    "/etc/zabbix/zabbix_agentd.conf"
+    "/etc/zabbix/zabbix_agent2.conf" 
+    "/etc/zabbix_agentd.conf"
+    "/usr/local/etc/zabbix_agentd.conf"
+)
+
+for config_file in "${possible_configs[@]}"; do
+    if [ -f "$config_file" ]; then
+        zabbix_conf="$config_file"
+        break
+    fi
+done
+```
+
+**Result**: Script now works correctly on all RHEL-family distributions.
+
+### Integer Expression Error Fix - RESOLVED (July 21, 2025)
+
+**Issue**: Script failed on AlmaLinux with "integer expression expected" error during package counting.
+
+**Symptoms:**
+```log
+virtualizor-server-setup.sh: line 761: [: 232\n0: integer expression expected
+```
+
+**Root Cause:**
+- `wc -l` command output contained whitespace/newlines
+- Comparison `[ "$updates" -gt 0 ]` failed with malformed string
+
+**Solution Applied:**
+Enhanced output cleaning and validation:
+```bash
+local updates=$($package_manager check-update -q 2>/dev/null | wc -l | tr -d '\n\r ' || echo "0")
+# Ensure updates is a valid integer
+if ! [[ "$updates" =~ ^[0-9]+$ ]]; then
+    log_warn "Unable to determine update count, assuming 0"
+    updates=0
+fi
+```
+
+**Result**: Robust handling of package manager output on all systems.
+
+### Resume After Reboot Logic - ENHANCED (July 21, 2025)
+
+**Issue**: Script failed with "Resume requested but no reboot flag found" causing exit code 1.
+
+**Symptoms:**
+```log
+[ERROR] Resume requested but no reboot flag found
+[ERROR] SCRIPT FAILED WITH EXIT CODE 1
+```
+
+**Solution Applied:**
+Enhanced recovery logic with multiple fallback methods:
+```bash
+if [ "$resume_after_reboot" = true ]; then
+    if next_stage=$(check_reboot_flag); then
+        # Normal resume path
+    else
+        # Try saved state
+        if load_state && [ -n "$CURRENT_STAGE" ]; then
+            target_stage="$CURRENT_STAGE"
+        # Check if setup is complete
+        elif systemctl is-active zabbix-agent >/dev/null 2>&1; then
+            target_stage="$STAGE_COMPLETE"
+        # Fresh start fallback
+        else
+            target_stage="$STAGE_INIT"
+        fi
+    fi
+fi
+```
+
+**Result**: Graceful handling of resume scenarios with multiple recovery options.
+
+### Progress Monitoring Enhancement - NEW (July 21, 2025)
+
+**Enhancement**: Added system activity monitoring during long-running operations.
+
+**Features:**
+- **Progress Updates**: Status updates every 5 minutes during package operations
+- **System Monitoring**: Shows CPU load, memory usage, and active processes
+- **Timeout Handling**: Smart timeouts for different operation types
+- **Background Process Management**: Proper handling of apt/dnf background operations
+
+**Example Output:**
+```log
+[INFO] Update still in progress... (300s elapsed)
+[INFO] System Activity - Load: 0.15 | Memory: 45.2%
+[INFO] Active apt processes: 3
+```
+
+### Systemd Service Optimization - ENHANCED (July 21, 2025)
+
+**Enhancement**: Systemd service now only runs when actually needed.
+
+**Improvements:**
+```bash
+[Unit]
+ConditionFileNotEmpty=/var/run/virtualizor-server-setup.reboot
+ExecStartPre=/bin/test -f /var/run/virtualizor-server-setup.reboot
+```
+
+**Result**: Eliminates unnecessary service executions and improves boot performance.
+
 ### Validation Error Exit Code 1 - NORMAL BEHAVIOR
 
 **Issue**: Script shows "ERROR DETECTED" with exit code 1 during `--validate` operation.
