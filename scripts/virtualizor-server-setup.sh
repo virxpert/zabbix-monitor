@@ -682,6 +682,147 @@ EOF
 }
 
 # ====================================================================
+# SYSTEM STATUS VALIDATION FUNCTIONS
+# ====================================================================
+validate_system_status() {
+    log_info "=== SYSTEM STATUS VALIDATION ==="
+    
+    local all_good=true
+    
+    # Check Zabbix Agent
+    log_info "Checking Zabbix Agent status..."
+    if systemctl is-active zabbix-agent >/dev/null 2>&1; then
+        log_info "✅ Zabbix Agent: RUNNING"
+        
+        # Check if agent can connect locally
+        if netstat -tlnp 2>/dev/null | grep -q ':10050.*zabbix_agentd' || ss -tlnp 2>/dev/null | grep -q ':10050.*zabbix_agentd'; then
+            log_info "✅ Zabbix Agent: Listening on port 10050"
+        else
+            log_warn "⚠️  Zabbix Agent: Not listening on expected port 10050"
+        fi
+    else
+        log_error "❌ Zabbix Agent: NOT RUNNING"
+        all_good=false
+    fi
+    
+    # Check SSH Tunnel Service
+    log_info "Checking SSH Tunnel status..."
+    if systemctl is-active zabbix-tunnel >/dev/null 2>&1; then
+        log_info "✅ SSH Tunnel Service: RUNNING"
+        
+        # Check tunnel connection
+        local tunnel_pid=$(systemctl show zabbix-tunnel --property MainPID --value 2>/dev/null)
+        if [ -n "$tunnel_pid" ] && [ "$tunnel_pid" != "0" ]; then
+            log_info "✅ SSH Tunnel: Active connection (PID: $tunnel_pid)"
+            
+            # Check if reverse tunnel port is established
+            if netstat -tlnp 2>/dev/null | grep -q "127.0.0.1:${DEFAULT_ZABBIX_SERVER_PORT}" || ss -tlnp 2>/dev/null | grep -q "127.0.0.1:${DEFAULT_ZABBIX_SERVER_PORT}"; then
+                log_info "✅ SSH Tunnel: Reverse port ${DEFAULT_ZABBIX_SERVER_PORT} is active"
+            else
+                log_warn "⚠️  SSH Tunnel: Reverse port ${DEFAULT_ZABBIX_SERVER_PORT} not detected locally"
+            fi
+        else
+            log_warn "⚠️  SSH Tunnel Service running but no active connection found"
+            all_good=false
+        fi
+    else
+        log_error "❌ SSH Tunnel Service: NOT RUNNING"
+        all_good=false
+    fi
+    
+    # Check Configuration Files
+    log_info "Checking configuration files..."
+    if [ -f "$ZBX_CONF" ]; then
+        if grep -q "^Server=127.0.0.1" "$ZBX_CONF" && grep -q "^ServerActive=127.0.0.1" "$ZBX_CONF"; then
+            log_info "✅ Zabbix Config: Configured for tunnel (127.0.0.1)"
+        else
+            log_warn "⚠️  Zabbix Config: Not configured for local tunnel"
+            all_good=false
+        fi
+    else
+        log_error "❌ Zabbix Config: Configuration file missing"
+        all_good=false
+    fi
+    
+    # Check SSH Key
+    if [ -f "$DEFAULT_SSH_KEY" ]; then
+        log_info "✅ SSH Key: Present at $DEFAULT_SSH_KEY"
+        
+        # Check key permissions
+        local key_perms=$(stat -c "%a" "$DEFAULT_SSH_KEY" 2>/dev/null || stat -f "%Lp" "$DEFAULT_SSH_KEY" 2>/dev/null)
+        if [ "$key_perms" = "600" ]; then
+            log_info "✅ SSH Key: Correct permissions (600)"
+        else
+            log_warn "⚠️  SSH Key: Incorrect permissions ($key_perms), should be 600"
+        fi
+    else
+        log_error "❌ SSH Key: Missing at $DEFAULT_SSH_KEY"
+        all_good=false
+    fi
+    
+    # Overall Status
+    log_info "=== OVERALL STATUS ==="
+    if [ "$all_good" = true ]; then
+        log_info "🎉 ALL SYSTEMS OPERATIONAL"
+        log_info "✅ Zabbix monitoring is ready and connected"
+        return 0
+    else
+        log_warn "⚠️  SOME ISSUES DETECTED - Check logs above"
+        log_info "📋 Troubleshooting steps:"
+        log_info "   1. Check service logs: journalctl -u zabbix-agent -u zabbix-tunnel"
+        log_info "   2. Test SSH connection: ssh -i $DEFAULT_SSH_KEY -p $DEFAULT_HOME_SERVER_SSH_PORT $DEFAULT_SSH_USER@$DEFAULT_HOME_SERVER_IP"
+        log_info "   3. Restart services: systemctl restart zabbix-agent zabbix-tunnel"
+        return 1
+    fi
+}
+
+show_quick_status() {
+    echo "==================================================================="
+    echo "Virtualizor Server Setup - Quick Status Check"
+    echo "==================================================================="
+    echo "Hostname: $(hostname)"
+    echo "Date: $(date '+%Y-%m-%d %H:%M:%S')"
+    echo ""
+    
+    # Zabbix Agent Status
+    if systemctl is-active zabbix-agent >/dev/null 2>&1; then
+        echo "Zabbix Agent:     ✅ RUNNING"
+    else
+        echo "Zabbix Agent:     ❌ STOPPED"
+    fi
+    
+    # SSH Tunnel Status
+    if systemctl is-active zabbix-tunnel >/dev/null 2>&1; then
+        echo "SSH Tunnel:       ✅ RUNNING"
+        local tunnel_pid=$(systemctl show zabbix-tunnel --property MainPID --value 2>/dev/null)
+        echo "Tunnel PID:       $tunnel_pid"
+    else
+        echo "SSH Tunnel:       ❌ STOPPED"
+    fi
+    
+    # Setup Status
+    if load_state && [ "$CURRENT_STAGE" = "$STAGE_COMPLETE" ]; then
+        echo "Setup Status:     ✅ COMPLETE"
+    elif load_state; then
+        echo "Setup Status:     🔄 IN PROGRESS ($CURRENT_STAGE)"
+    else
+        echo "Setup Status:     ❓ NOT STARTED"
+    fi
+    
+    echo ""
+    echo "Log Files:"
+    echo "  Setup:   $LOG_FILE"
+    echo "  Zabbix:  /var/log/zabbix/zabbix_agentd.log"
+    echo "  Tunnel:  journalctl -u zabbix-tunnel"
+    echo ""
+    echo "Commands:"
+    echo "  Full status:     $0 --validate"
+    echo "  Service logs:    journalctl -u zabbix-agent -u zabbix-tunnel"
+    echo "  Test tunnel:     ssh -i $DEFAULT_SSH_KEY -p $DEFAULT_HOME_SERVER_SSH_PORT $DEFAULT_SSH_USER@$DEFAULT_HOME_SERVER_IP"
+    echo "==================================================================="
+}
+
+# ====================================================================
 # EMBEDDED HELP AND USAGE
 # ====================================================================
 show_help() {
@@ -704,6 +845,8 @@ OPTIONS:
     --ssh-host HOST           SSH tunnel host (default: $DEFAULT_HOME_SERVER_IP)
     --test                    Test mode - validate without changes
     --status                  Show current setup status
+    --validate                Comprehensive system validation
+    --quick-status            Quick status overview
     --cleanup                 Clean up state files and services
     --help                    Show this help message
 
@@ -784,6 +927,14 @@ main() {
             --status)
                 show_status=true
                 shift
+                ;;
+            --validate)
+                validate_system_status
+                exit $?
+                ;;
+            --quick-status)
+                show_quick_status
+                exit 0
                 ;;
             --cleanup)
                 cleanup_mode=true
