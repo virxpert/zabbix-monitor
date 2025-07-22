@@ -44,29 +44,13 @@ readonly DEFAULT_MOTD_MESSAGE="WARNING: Authorized Access Only
 *   Unauthorized use is strictly prohibited and monitored. *
 *   For any issue, report it to support@everythingcloud.ca *"
 
-# Dynamic Configuration System for Virtualizor Provisioning
-# Supports: Environment Variables, Command-line Parameters, and Runtime Prompts
-
-# Method 1: Environment Variables (if set)
-# Method 2: Command-line Parameters (see usage function)  
-# Method 3: Secure defaults with runtime validation
-
-# Default configuration (fallback values - update these for your infrastructure)
+# Zabbix configuration
 readonly DEFAULT_ZABBIX_VERSION="6.4"
 readonly DEFAULT_ZABBIX_SERVER="127.0.0.1"
-
-# CRITICAL: Update these default values for your infrastructure before deployment
-# These are used when no environment variables or parameters are provided
-readonly FALLBACK_HOME_SERVER_IP="your-monitor-server.example.com"
-readonly FALLBACK_HOME_SERVER_SSH_PORT="2022"
-readonly FALLBACK_SSH_USER="zabbix-user"
-
-# Runtime configuration (populated from env vars, parameters, or defaults)
-DEFAULT_HOME_SERVER_IP="${ZABBIX_SERVER_DOMAIN:-$FALLBACK_HOME_SERVER_IP}"
-DEFAULT_HOME_SERVER_SSH_PORT="${SSH_TUNNEL_PORT:-$FALLBACK_HOME_SERVER_SSH_PORT}"
-DEFAULT_SSH_USER="${SSH_TUNNEL_USER:-$FALLBACK_SSH_USER}"
-
+readonly DEFAULT_HOME_SERVER_IP="monitor.cloudgeeks.in"
+readonly DEFAULT_HOME_SERVER_SSH_PORT=20202
 readonly DEFAULT_ZABBIX_SERVER_PORT=10051
+readonly DEFAULT_SSH_USER="zabbixssh"
 readonly DEFAULT_SSH_KEY="/root/.ssh/zabbix_tunnel_key"
 readonly DEFAULT_ADMIN_USER="root"
 readonly DEFAULT_ADMIN_KEY="/root/.ssh/id_rsa"
@@ -481,12 +465,6 @@ detect_os() {
             OS_FAMILY="rhel"
             OS_ID="$ID"
             OS_VERSION="${VERSION_ID%%.*}"
-            
-            # AlmaLinux 10 compatibility: use RHEL 9 packages (el10 packages don't exist yet)
-            if [[ "$ID" == "almalinux" && "$OS_VERSION" == "10" ]]; then
-                log_info "AlmaLinux 10 detected - using RHEL 9 packages for Zabbix compatibility"
-                OS_VERSION="9"
-            fi
             ;;
         *)
             log_error "Unsupported OS: $ID"
@@ -957,18 +935,14 @@ EOF
 stage_tunnel_setup() {
     log_stage "STAGE: TUNNEL-SETUP - Setting up SSH tunnel"
     
-    local ssh_host="${1:-$DEFAULT_HOME_SERVER_IP}"
-    local ssh_port="${2:-$DEFAULT_HOME_SERVER_SSH_PORT}"
-    local ssh_user="${3:-$DEFAULT_SSH_USER}"
-    
     # Check if SSH key exists, generate if needed
     if [ ! -f "$DEFAULT_SSH_KEY" ]; then
         log_info "Generating SSH key for tunnel"
-        generate_tunnel_ssh_key "$DEFAULT_SSH_KEY" "$ssh_host" "$ssh_port" "$ssh_user"
+        generate_tunnel_ssh_key "$DEFAULT_SSH_KEY"
     fi
     
-    # Create tunnel service with custom parameters
-    if create_ssh_tunnel_service "$ssh_host" "$ssh_port" "$ssh_user"; then
+    # Create tunnel service
+    if create_ssh_tunnel_service; then
         log_info "SSH tunnel configured successfully"
         save_state "$STAGE_COMPLETE" "tunnel_configured=true"
         return 0
@@ -1182,9 +1156,6 @@ configure_zabbix_for_tunnel() {
 
 generate_tunnel_ssh_key() {
     local ssh_key="$1"
-    local ssh_host="${2:-$DEFAULT_HOME_SERVER_IP}"
-    local ssh_port="${3:-$DEFAULT_HOME_SERVER_SSH_PORT}"
-    local ssh_user="${4:-$DEFAULT_SSH_USER}"
     local key_comment="zabbix-tunnel-$(hostname)-$(date +%Y%m%d)"
     
     mkdir -p "$(dirname "$ssh_key")"
@@ -1208,14 +1179,9 @@ Generated: $(date '+%Y-%m-%d %H:%M:%S')
 Hostname: $(hostname)
 Server IP: $(hostname -I | awk '{print $1}')
 
-TUNNEL CONNECTION DETAILS:
-- Target Server: ${ssh_host}:${ssh_port}
-- SSH User: ${ssh_user}
-- Tunnel Port: ${DEFAULT_ZABBIX_SERVER_PORT}
-
 ADMINISTRATOR ACTION REQUIRED:
 1. Copy the SSH public key below to your Zabbix server
-2. Add it to ${ssh_user}@${ssh_host}:~/.ssh/authorized_keys
+2. Add it to the zabbixssh user's authorized_keys
 3. Restart the tunnel service: systemctl start zabbix-tunnel
 
 SSH PUBLIC KEY (copy this entire line):
@@ -1231,7 +1197,6 @@ Quick access commands:
 - View this info: cat /root/zabbix_ssh_key_info.txt
 - Copy public key: cat /root/zabbix_tunnel_public_key.txt
 - Check tunnel status: systemctl status zabbix-tunnel
-- Test SSH connection: ssh -i $ssh_key -p ${ssh_port} ${ssh_user}@${ssh_host}
 ========================================
 EOF
         
@@ -1256,12 +1221,6 @@ EOF
 }
 
 create_ssh_tunnel_service() {
-    local ssh_host="${1:-$DEFAULT_HOME_SERVER_IP}"
-    local ssh_port="${2:-$DEFAULT_HOME_SERVER_SSH_PORT}"
-    local ssh_user="${3:-$DEFAULT_SSH_USER}"
-    
-    log_info "Creating SSH tunnel service for ${ssh_user}@${ssh_host}:${ssh_port}"
-    
     # Create systemd service for SSH tunnel
     cat > /etc/systemd/system/zabbix-tunnel.service << EOF
 [Unit]
@@ -1281,8 +1240,8 @@ ExecStart=/usr/bin/ssh -i ${DEFAULT_SSH_KEY} \\
     -o UserKnownHostsFile=/dev/null \\
     -o BatchMode=yes \\
     -N -R ${DEFAULT_ZABBIX_SERVER_PORT}:localhost:${DEFAULT_ZABBIX_SERVER_PORT} \\
-    -p ${ssh_port} \\
-    ${ssh_user}@${ssh_host}
+    -p ${DEFAULT_HOME_SERVER_SSH_PORT} \\
+    ${DEFAULT_SSH_USER}@${DEFAULT_HOME_SERVER_IP}
 Restart=always
 RestartSec=60
 StandardOutput=journal
@@ -1296,7 +1255,7 @@ EOF
     systemctl enable zabbix-tunnel
     
     # Don't start yet - requires manual SSH key setup
-    log_info "SSH tunnel service created for ${ssh_host} (requires manual SSH key setup)"
+    log_info "SSH tunnel service created (requires manual SSH key setup)"
     return 0
 }
 
@@ -1590,28 +1549,6 @@ run_diagnostics() {
     fi
     echo ""
     
-    # REBOOT RESUME DIAGNOSTICS
-    echo "REBOOT RESUME DIAGNOSTICS:"
-    
-    if systemctl is-enabled "${SCRIPT_NAME}.service" >/dev/null 2>&1; then
-        echo "  Service enabled: YES"
-        if systemctl is-active "${SCRIPT_NAME}.service" >/dev/null 2>&1; then
-            echo "  Service active: YES"
-        else
-            echo "  Service active: NO"
-            echo "  Service logs (last 5 lines):"
-            journalctl -u "${SCRIPT_NAME}.service" --no-pager -n 5 2>/dev/null | while read line; do
-                echo "    $line"
-            done
-        fi
-    else
-        echo "  Service enabled: NO"
-    fi
-    
-    echo "  State directory: $(dirname "$STATE_FILE") ($([ -d "$(dirname "$STATE_FILE")" ] && echo "EXISTS" || echo "MISSING"))"
-    echo "  State file permissions: $(ls -l "$STATE_FILE" 2>/dev/null | awk '{print $1}' || echo "N/A")"
-    echo "  Reboot flag permissions: $(ls -l "$REBOOT_FLAG_FILE" 2>/dev/null | awk '{print $1}' || echo "N/A")"
-
     # Log Information
     echo "LOG INFORMATION:"
     if [ -f "$LOG_FILE" ]; then
@@ -1720,9 +1657,6 @@ OPTIONS:
     --banner-text TEXT         Custom banner text
     --zabbix-version VERSION   Zabbix version to install (default: $DEFAULT_ZABBIX_VERSION)
     --ssh-host HOST           SSH tunnel host (default: $DEFAULT_HOME_SERVER_IP)
-    --ssh-port PORT           SSH tunnel port (default: $DEFAULT_HOME_SERVER_SSH_PORT)
-    --ssh-user USER           SSH tunnel user (default: $DEFAULT_SSH_USER)
-    --zabbix-server-port PORT Zabbix server port (default: $DEFAULT_ZABBIX_SERVER_PORT)
     --test                    Test mode - validate without changes
     --status                  Show current setup status
     --validate                Comprehensive system validation
@@ -1731,17 +1665,6 @@ OPTIONS:
     --quick-status            Quick status overview
     --cleanup                 Clean up state files and services
     --help                    Show this help message
-
-DYNAMIC PROVISIONING EXAMPLES:
-    # Virtualizor Recipe with environment variables
-    ZABBIX_SERVER_DOMAIN="monitor.acme.com" SSH_TUNNEL_PORT="7832" \\
-    SSH_TUNNEL_USER="mon-agent" curl -fsSL \\
-    https://raw.githubusercontent.com/virxpert/zabbix-monitor/main/scripts/virtualizor-server-setup.sh | bash
-
-    # Direct execution with parameters
-    ./virtualizor-server-setup.sh --ssh-host "monitor.acme.com" \\
-                                  --ssh-port "7832" \\
-                                  --ssh-user "mon-agent"
 
 STAGES:
     $STAGE_INIT               Initial setup and validation
@@ -1799,9 +1722,6 @@ main() {
     local banner_text="$DEFAULT_BANNER_TEXT"
     local zabbix_version="$DEFAULT_ZABBIX_VERSION"
     local ssh_host="$DEFAULT_HOME_SERVER_IP"
-    local ssh_port="$DEFAULT_HOME_SERVER_SSH_PORT"
-    local ssh_user="$DEFAULT_SSH_USER"
-    local zabbix_server_port="$DEFAULT_ZABBIX_SERVER_PORT"
     local resume_after_reboot=false
     local test_mode=false
     local show_status=false
@@ -1856,30 +1776,6 @@ main() {
                     exit 2
                 fi
                 ssh_host="$2"
-                shift 2
-                ;;
-            --ssh-port)
-                if [ -z "${2:-}" ]; then
-                    log_error "ERROR: --ssh-port requires a value"
-                    exit 2
-                fi
-                ssh_port="$2"
-                shift 2
-                ;;
-            --ssh-user)
-                if [ -z "${2:-}" ]; then
-                    log_error "ERROR: --ssh-user requires a value"
-                    exit 2
-                fi
-                ssh_user="$2"
-                shift 2
-                ;;
-            --zabbix-server-port)
-                if [ -z "${2:-}" ]; then
-                    log_error "ERROR: --zabbix-server-port requires a value"
-                    exit 2
-                fi
-                zabbix_server_port="$2"
                 shift 2
                 ;;
             --test)
@@ -2051,16 +1947,16 @@ main() {
             stage_updates
             ;;
         "$STAGE_POST_REBOOT")
-            stage_post_reboot && stage_zabbix_install "$zabbix_version" && stage_zabbix_configure && stage_tunnel_setup "$ssh_host" "$ssh_port" "$ssh_user" && stage_complete
+            stage_post_reboot && stage_zabbix_install "$zabbix_version" && stage_zabbix_configure && stage_tunnel_setup && stage_complete
             ;;
         "$STAGE_ZABBIX_INSTALL")
-            stage_zabbix_install "$zabbix_version" && stage_zabbix_configure && stage_tunnel_setup "$ssh_host" "$ssh_port" "$ssh_user" && stage_complete
+            stage_zabbix_install "$zabbix_version" && stage_zabbix_configure && stage_tunnel_setup && stage_complete
             ;;
         "$STAGE_ZABBIX_CONFIGURE")
-            stage_zabbix_configure && stage_tunnel_setup "$ssh_host" "$ssh_port" "$ssh_user" && stage_complete
+            stage_zabbix_configure && stage_tunnel_setup && stage_complete
             ;;
         "$STAGE_TUNNEL_SETUP")
-            stage_tunnel_setup "$ssh_host" "$ssh_port" "$ssh_user" && stage_complete
+            stage_tunnel_setup && stage_complete
             ;;
         "$STAGE_COMPLETE")
             stage_complete

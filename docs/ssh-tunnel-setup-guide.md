@@ -5,13 +5,13 @@ This guide provides the essential steps for configuring SSH tunnels between Zabb
 ## Prerequisites
 
 - Zabbix server running in homelab behind NAT router
-- Domain/IP: `monitor.yourcompany.com` (points to your public IP)
-- NAT rule: External port (your choice) → Internal SSH port 22
+- Domain/IP: `monitor.cloudgeeks.in` (points to your public IP)
+- NAT rule: External port 20202 → Internal SSH port 22
 - SSH access to the Zabbix server with sudo privileges
 - Agent servers provisioned with the Virtualizor setup script
 
 **Network Setup:**
-- Router NAT: `(your external port) → 22 (internal Zabbix server)`
+- Router NAT: `20202 (external) → 22 (internal Zabbix server)`
 - Zabbix ports (10050/10051) stay internal - **NO router port forwarding needed**
 - SSH tunnels handle all Zabbix traffic securely
 
@@ -20,7 +20,7 @@ This guide provides the essential steps for configuring SSH tunnels between Zabb
 ### 1. Create SSH Tunnel User
 
 ```bash
-# On your monitoring server
+# On monitor.cloudgeeks.in
 sudo useradd -m -s /bin/bash zabbixssh
 sudo mkdir -p /home/zabbixssh/.ssh
 sudo chmod 700 /home/zabbixssh/.ssh
@@ -54,13 +54,9 @@ Match User zabbixssh
     ForceCommand /bin/false
 ```
 
-Test and restart SSH:
+Restart SSH:
 
 ```bash
-# Test configuration first
-sudo sshd -t
-
-# If test passes, restart SSH
 sudo systemctl restart sshd
 ```
 

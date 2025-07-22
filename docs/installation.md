@@ -8,7 +8,7 @@ This guide covers the integration of `virtualizor-server-setup.sh` into **Virtua
 
 ```
 [Guest Server 1] ----SSH Tunnel---> 
-[Guest Server 2] ----SSH Tunnel---> [Monitor Server:your-port] --> [Zabbix Server:10051]
+[Guest Server 2] ----SSH Tunnel---> [Monitor Server:20202] --> [Zabbix Server:10051]
 [Guest Server 3] ----SSH Tunnel---> 
 [Guest Server N] ----SSH Tunnel---> 
 ```
